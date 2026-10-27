@@ -178,7 +178,14 @@ impl ApiEntry {
         let time = self.stop.departure_timestamp? * 1000;
         let to = non_empty(self.to)?;
         let category = non_empty(self.category).unwrap_or_default();
-        let number = non_empty(self.number).unwrap_or_default();
+        let mut number = non_empty(self.number).unwrap_or_default();
+        // Les numéros de train arrivent parfois complétés de zéros (« 000044 »).
+        if number.bytes().all(|b| b.is_ascii_digit()) {
+            let trimmed = number.trim_start_matches('0');
+            if !trimmed.is_empty() {
+                number = trimmed.to_owned();
+            }
+        }
         // Certaines lignes portent déjà leur catégorie (« S1 »).
         let line = if number.starts_with(&category) {
             number
@@ -214,10 +221,13 @@ mod tests {
             {"stop":{"departureTimestamp":1793102520,"delay":0,"platform":null,"prognosis":null},
              "category":"S","number":"S1","to":"Monthey"},
             {"stop":{"departureTimestamp":null,"delay":0,"platform":"1","prognosis":null},
-             "category":"R","number":"91","to":"Sans heure"}
+             "category":"R","number":"91","to":"Sans heure"},
+            {"stop":{"departureTimestamp":1793102700,"delay":0,"platform":"3","prognosis":null},
+             "category":"EC","number":"000044","to":"Genève"}
         ]}"#;
         let deps = parse(body.as_bytes()).unwrap();
-        assert_eq!(deps.len(), 3);
+        assert_eq!(deps.len(), 4);
+        assert_eq!(deps[3].line, "EC 44");
         assert_eq!(
             deps[0],
             Departure {
