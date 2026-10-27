@@ -1,6 +1,7 @@
 # Stack tout-en-un pour Portainer (à coller dans l'éditeur web, ou à choisir
-# comme fichier d'une stack « Repository ») : la navette + Caddy, qui obtient
-# et renouvelle les certificats HTTPS tout seul.
+# comme fichier d'une stack « Repository ») : la navette, Caddy, qui obtient
+# et renouvelle les certificats HTTPS tout seul, et Watchtower, qui installe
+# chaque nouvelle image publiée par GitHub (vérifiée toutes les 2 minutes).
 #
 # Variables à définir dans « Environment variables » de la stack :
 #   NAVETTE_DRIVER_TOKEN, NAVETTE_ADMIN_TOKEN
@@ -16,6 +17,8 @@ services:
     environment:
       NAVETTE_DRIVER_TOKEN: ${NAVETTE_DRIVER_TOKEN:?NAVETTE_DRIVER_TOKEN manquant}
       NAVETTE_ADMIN_TOKEN: ${NAVETTE_ADMIN_TOKEN:?NAVETTE_ADMIN_TOKEN manquant}
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     volumes:
       - navette-data:/app/data
 
@@ -39,6 +42,17 @@ services:
     volumes:
       - caddy-data:/data
       - caddy-config:/config
+
+  # Ne touche qu'aux conteneurs marqués du label ci-dessus (la navette seule).
+  watchtower:
+    image: nickfedor/watchtower:1
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_POLL_INTERVAL: "120"
+      WATCHTOWER_CLEANUP: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   navette-data:

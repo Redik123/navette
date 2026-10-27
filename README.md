@@ -181,8 +181,8 @@ serveur.
 `navette.jcloud.ik-server.com`) : *Stacks* → *Add stack* → **Web editor**,
 coller le contenu de [`stack-portainer.yml`](stack-portainer.yml), renseigner
 `NAVETTE_DRIVER_TOKEN` et `NAVETTE_ADMIN_TOKEN` dans *Environment variables*,
-puis *Deploy the stack*. La navette et Caddy (HTTPS automatique) démarrent
-ensemble.
+puis *Deploy the stack*. La navette, Caddy (HTTPS automatique) et Watchtower
+(mises à jour automatiques) démarrent ensemble.
 
 **Avec un dépôt Git et un proxy existant** :
 
@@ -201,10 +201,16 @@ ensemble.
      paths*. Caddy prend les ports 80 et 443 et obtient le certificat tout seul.
 5. *Deploy the stack*. Le conteneur passe en **healthy** quand il répond.
 
-Mises à jour : après un push (image reconstruite en ~5 min), *Pull and
-redeploy* sur la stack, ou activer *GitOps updates* pour que Portainer le
-fasse tout seul. L'état (pause, message) est gardé dans le volume
-`navette-data`.
+**Mises à jour** : avec `stack-portainer.yml`, c'est automatique. GitHub
+reconstruit l'image en 2 à 4 minutes, Watchtower la repère dans les 2 minutes
+et redémarre la navette (quelques secondes de coupure, les pages se
+reconnectent seules). Pour l'installer tout de suite : *Update the stack* avec
+**Re-pull image**. Pour figer la version (par exemple pendant le festival) :
+arrêter le conteneur `watchtower` dans Portainer.
+
+Un redémarrage garde la pause et le message (volume `navette-data`), mais remet
+à zéro le compteur de passagers et efface les demandes « faire signe » en
+cours : éviter de pousser pendant le service.
 
 Si Portainer n'arrive pas à télécharger l'image, c'est que le paquet GitHub
 est privé : *github.com/Redik123?tab=packages* → **navette** → *Package
@@ -226,8 +232,8 @@ Pour construire l'image sur place au lieu de la télécharger :
 ### Modifier la configuration
 
 Arrêts, tracé, horaires, textes : modifier `config.toml`, `route.geojson` ou
-`static/` dans le dépôt, pousser sur `main`, puis redéployer la stack quand
-l'image est prête. Pour un essai rapide sans passer par GitHub, on peut aussi
+`static/` dans le dépôt et pousser sur `main` : le serveur se met à jour tout
+seul quelques minutes plus tard. Pour un essai rapide sans passer par GitHub, on peut aussi
 monter un fichier par-dessus celui de l'image
 (`/chemin/config.toml:/app/config.toml:ro` dans `volumes`).
 
