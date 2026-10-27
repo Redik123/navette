@@ -1,0 +1,10 @@
+target
+data
+.env
+.env.*
+.git
+.github
+.impeccable
+tools
+*.md
+docker-compose*.yml

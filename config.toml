@@ -1,0 +1,78 @@
+# Configuration de la navette. Les jetons secrets ne sont PAS ici :
+# ils viennent des variables d'environnement NAVETTE_DRIVER_TOKEN et
+# NAVETTE_ADMIN_TOKEN (voir .env).
+
+[server]
+listen = "0.0.0.0:8080"
+static_dir = "static"
+data_dir = "data"
+route_file = "route.geojson"
+max_viewers = 5000
+
+[tracking]
+# Vitesse moyenne réelle en ville, feux compris. À ajuster après le premier tour.
+avg_speed_kmh = 22.0
+# Temps d'arrêt moyen à un arrêt intermédiaire (secondes).
+dwell_s = 60
+# Distance max GPS ↔ tracé pour être « sur le tracé » (mètres).
+snap_max_m = 60.0
+# Sans nouvelle position depuis… → « signal perdu » puis « hors ligne » (secondes).
+stale_after_s = 90
+offline_after_s = 600
+# Positions GPS moins précises que ça ignorées (mètres).
+max_accuracy_m = 150.0
+
+[shuttle]
+# Places à bord : la navette part dès qu'elle est pleine.
+capacity = 16
+
+[pickups]
+# « Faire signe à la navette » : quelqu'un sur le trajet, loin d'un arrêt,
+# demande à être pris en route. Le chauffeur le voit sur sa page.
+enabled = true
+max_distance_m = 50        # distance max entre la personne et la route de la navette
+min_stop_distance_m = 150  # plus près d'un arrêt que ça : on attend à l'arrêt
+max_group = 6
+expire_after_min = 20
+max_active = 12            # demandes simultanées max (anti-abus)
+
+[event]
+name = "Ragnarok Festival 2026 · Halloween Édition"
+info = "Navette gratuite de 16 places entre la gare de Sion et l'Usine de Chandoline. Pas d'horaire fixe : elle part dès qu'elle est pleine, ou quand le chauffeur décide."
+# TODO : heures de service réelles de la navette.
+schedule = [
+  "Ven 30.10 · 21:00 → 05:00",
+  "Sam 31.10 · 21:00 → 05:00",
+]
+tickets_url = "https://shotgun.live/fr/events/ragnarok-festival-2026-halloween-edition"
+
+[trains]
+# Prochains départs en gare, avec retards en temps réel (API publique
+# transport.opendata.ch, gratuite et sans clé). Le serveur garde la réponse
+# en cache : une requête par minute au plus, quel que soit le nombre de visiteurs.
+enabled = true
+station_id = "8501506"   # Sion
+station_name = "Sion"
+limit = 6
+transportations = ["train"]   # ou aussi "bus" pour les cars postaux
+refresh_s = 60
+
+# Les arrêts, dans l'ordre de passage. Le tracé (route.geojson) doit passer
+# par chacun : régénérer avec tools/make-route.ps1 si on en change (la
+# commande exacte du tracé actuel est dans le README).
+
+[[stops]]
+id = "gare"
+name = "Gare CFF de Sion"
+lat = 46.226843
+lon = 7.358991
+radius_m = 50
+detail = "Côté sud de la gare"
+
+[[stops]]
+id = "festival"
+name = "Usine de Chandoline"
+lat = 46.223239
+lon = 7.374629
+radius_m = 60
+detail = "Entrée du festival"

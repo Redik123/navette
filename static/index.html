@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>Navette · Ragnarok Festival</title>
+  <meta name="description" content="Où est la navette du Ragnarok Festival ? Position en direct entre la gare de Sion et l'Usine de Chandoline.">
+  <meta property="og:title" content="Navette en direct · Ragnarok Festival">
+  <meta property="og:description" content="Position de la navette en temps réel et temps d'attente aux arrêts.">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="https://ragnarok-events.ch/">
+      <span class="wordmark">Ragnarok</span>
+      <span class="brand-sub">Navette</span>
+    </a>
+    <div class="conn" id="conn" data-state="connecting">
+      <span class="conn-dot"></span><span id="conn-text">Connexion…</span>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" role="status" hidden></div>
+
+  <main class="layout">
+    <div class="map-wrap">
+      <div id="map" role="region" aria-label="Carte du trajet de la navette"></div>
+      <div class="map-actions">
+        <button type="button" id="btn-bus" aria-pressed="false" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          Suivre la navette
+        </button>
+        <button type="button" id="btn-route">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+          Trajet
+        </button>
+      </div>
+      <button type="button" class="locate" id="btn-locate" aria-pressed="false"
+              title="Ta position reste sur ton téléphone : rien n'est envoyé.">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4.5 20.3l.7.7L12 18l6.8 3 .7-.7z"/></svg>
+        <span id="btn-locate-text">Me localiser</span>
+      </button>
+      <div id="toast" class="toast" role="status" hidden></div>
+    </div>
+
+    <aside class="sheet" id="sheet">
+      <button type="button" class="handle" id="handle" aria-label="Réduire ou agrandir le panneau" aria-expanded="true"></button>
+
+      <section class="status">
+        <span class="pill off" id="status-pill">Connexion</span>
+        <h1 id="status-title" aria-live="polite">Recherche de la navette…</h1>
+        <p class="status-sub" id="status-sub"></p>
+        <div class="seats" id="seats" hidden>
+          <span class="seats-text" id="seats-text"></span>
+          <span class="seats-bar" id="seats-bar" aria-hidden="true"></span>
+        </div>
+        <p class="updated" id="updated"></p>
+      </section>
+
+      <section class="block">
+        <h2>Arrêts</h2>
+        <ol class="etas" id="etas"></ol>
+      </section>
+
+      <section class="block" id="pickup-block" hidden>
+        <h2>Sur le trajet, loin d'un arrêt ?</h2>
+        <div id="pickup-idle">
+          <p class="info">Si tu ne peux vraiment pas rejoindre un arrêt, fais signe à la navette : le chauffeur verra où tu attends sur sa route.</p>
+          <button type="button" class="btn" id="btn-pickup">Faire signe à la navette</button>
+          <p class="info" id="pickup-unavailable"></p>
+        </div>
+        <div class="pickup-card" id="pickup-active" hidden>
+          <strong id="pickup-title"></strong>
+          <p id="pickup-sub"></p>
+          <button type="button" class="btn ghost" id="btn-pickup-cancel">Annuler ma demande</button>
+        </div>
+      </section>
+
+      <section class="block" id="trains-block" hidden>
+        <h2 id="trains-title">Prochains trains</h2>
+        <ol class="trains" id="trains"></ol>
+        <p class="info" id="trains-note"></p>
+      </section>
+
+      <section class="block">
+        <h2>Service</h2>
+        <ul class="schedule" id="schedule"></ul>
+        <p class="info" id="info"></p>
+      </section>
+
+      <footer class="sheet-footer">
+        <a id="tickets" href="#" target="_blank" rel="noopener" hidden>Billets</a>
+        <a href="https://ragnarok-events.ch/" target="_blank" rel="noopener">ragnarok-events.ch</a>
+        <a href="https://www.instagram.com/ragnarok.event/" target="_blank" rel="noopener">Instagram</a>
+      </footer>
+    </aside>
+  </main>
+
+  <dialog class="dialog" id="pickup-dialog" aria-labelledby="pickup-dialog-title">
+    <form id="pickup-form">
+      <h3 id="pickup-dialog-title">Faire signe à la navette</h3>
+      <fieldset>
+        <legend>Tu vas où ?</legend>
+        <div class="choices" id="pickup-dest"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Combien vous êtes ?</legend>
+        <div class="stepper">
+          <button type="button" id="pickup-minus" aria-label="Une personne de moins">−</button>
+          <output id="pickup-count">1</output>
+          <button type="button" id="pickup-plus" aria-label="Une personne de plus">+</button>
+        </div>
+      </fieldset>
+      <p class="dialog-note" id="pickup-seats"></p>
+      <p class="dialog-note">Ta position est envoyée une seule fois, recalée sur la route de la navette. Elle est effacée dès que la navette est passée.</p>
+      <p class="dialog-error" id="pickup-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="pickup-close">Annuler</button>
+        <button type="submit" class="btn" id="pickup-send">Envoyer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/app.js"></script>
+</body>
+</html>

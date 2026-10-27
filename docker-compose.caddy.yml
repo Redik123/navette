@@ -1,0 +1,29 @@
+# À ajouter seulement si le serveur n'a pas encore de proxy HTTPS :
+#
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#
+# Portainer (stack depuis le dépôt Git) : mettre ce fichier dans
+# « Additional paths ».
+#
+# Caddy obtient et renouvelle le certificat tout seul. Prérequis : le DNS de
+# navette.ragnarok-festival.ch pointe vers ce serveur, ports 80 et 443 libres
+# et ouverts. Pas de compression ajoutée : elle casserait le flux temps réel.
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - navette
+    command: caddy reverse-proxy --from ${NAVETTE_DOMAIN:-navette.ragnarok-festival.ch} --to navette:8080
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

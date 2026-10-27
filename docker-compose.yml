@@ -1,0 +1,31 @@
+# Stack Docker / Portainer de la navette.
+#
+# L'image est construite par GitHub Actions à chaque push sur main
+# (ghcr.io/redik123/navette:latest) : le serveur n'a rien à compiler.
+#
+# Variables (Portainer : « Environment variables » de la stack ;
+# en ligne de commande : fichier .env à côté, voir .env.example) :
+#   NAVETTE_DRIVER_TOKEN, NAVETTE_ADMIN_TOKEN   obligatoires
+#   NAVETTE_PORT                                port publié, 8080 par défaut
+#
+# HTTPS (obligatoire pour le GPS des téléphones) : faire pointer le proxy
+# déjà en place (Nginx Proxy Manager, Traefik, Caddy…) de
+# navette.ragnarok-festival.ch vers ce conteneur, port 8080. Sans proxy,
+# ajouter docker-compose.caddy.yml (voir le README).
+
+services:
+  navette:
+    image: ghcr.io/redik123/navette:latest
+    restart: unless-stopped
+    environment:
+      NAVETTE_DRIVER_TOKEN: ${NAVETTE_DRIVER_TOKEN:?NAVETTE_DRIVER_TOKEN manquant}
+      NAVETTE_ADMIN_TOKEN: ${NAVETTE_ADMIN_TOKEN:?NAVETTE_ADMIN_TOKEN manquant}
+      RUST_LOG: ${RUST_LOG:-navette=info}
+    ports:
+      - "${NAVETTE_PORT:-8080}:8080"
+    volumes:
+      # Pause / hors service et message affiché : survivent aux mises à jour.
+      - navette-data:/app/data
+
+volumes:
+  navette-data:

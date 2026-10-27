@@ -1,0 +1,108 @@
+/* Commandes de l'équipage (pages chauffeur et orga). Gros boutons : on s'en
+   sert debout, de nuit, avec des gens autour. */
+
+.crew { display: grid; gap: 12px; }
+
+/* Base commune, indépendante du style des boutons de chaque page. */
+.crew button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.crew button:disabled { opacity: 0.5; cursor: default; }
+
+.crew .crew-seats {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.crew .crew-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.crew .crew-counter {
+  display: grid;
+  grid-template-columns: 72px 1fr 72px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.crew .crew-step {
+  height: 72px;
+  border-radius: 16px;
+  background: var(--surface-2, #1c1923);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.crew .crew-count {
+  font-size: 52px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.crew .crew-count::after {
+  content: attr(data-capacity);
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.crew .crew-free { margin-top: 6px; color: var(--green); font-weight: 700; }
+.crew .crew-free.full { color: var(--amber); }
+
+.crew .crew-quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+
+.crew .crew-depart {
+  min-height: 64px;
+  border-radius: 18px;
+  background: var(--surface);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+/* À quai : c'est l'action attendue. */
+.crew .crew-depart.ready { border-color: var(--orange); background: var(--orange); color: #1b0c00; }
+
+.crew .crew-note { margin: 0; color: var(--muted); font-size: 13px; }
+.crew .crew-note:empty { display: none; }
+
+.crew .crew-pickups h2 { margin: 8px 0; }
+.crew .crew-pickups ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+.crew .crew-pickup {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.crew .crew-pickup.new { border-color: #38bdf8; box-shadow: 0 0 0 1px #38bdf8; }
+
+.crew .crew-pickup-main strong { display: block; font-size: 17px; }
+.crew .crew-pickup-main span { color: var(--muted); font-size: 14px; }
+
+.crew .crew-pickup button { min-width: 72px; min-height: 48px; }
+.crew .crew-pickup .crew-picked { border-color: var(--green); color: var(--green); }

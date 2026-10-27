@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="robots" content="noindex">
+  <title>Navette · Chauffeur</title>
+  <link rel="stylesheet" href="/crew.css">
+  <style>
+    :root {
+      --bg: #0a0a0a; --surface: #121016; --line: #2a2533; --text: #f1f5f9; --muted: #a39cb0;
+      --violet: #a78bfa; --orange: #ff7a1a; --green: #4ade80; --amber: #fbbf24; --red: #f87171;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+      background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column; gap: 16px; max-width: 520px; margin-inline: auto;
+    }
+    h1 { margin: 0; font-size: 14px; letter-spacing: .2em; text-transform: uppercase; color: var(--violet); }
+    .state {
+      padding: 28px 20px; border-radius: 20px; background: var(--surface); border: 2px solid var(--line); text-align: center;
+    }
+    .state strong { display: block; font-size: 30px; line-height: 1.15; }
+    .state span { color: var(--muted); }
+    .state[data-s="ok"] { border-color: var(--green); } .state[data-s="ok"] strong { color: var(--green); }
+    .state[data-s="warn"] { border-color: var(--amber); } .state[data-s="warn"] strong { color: var(--amber); }
+    .state[data-s="err"] { border-color: var(--red); } .state[data-s="err"] strong { color: var(--red); }
+    dl { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
+    dl div { padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+    dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    button, input { font: inherit; }
+    button {
+      min-height: 60px; border: 0; border-radius: 16px; font-size: 18px; font-weight: 800; cursor: pointer;
+      background: var(--orange); color: #1b0c00;
+    }
+    button.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--line); min-height: 48px; font-size: 15px; }
+    input { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+    .note { color: var(--muted); font-size: 14px; margin: 0; }
+    h2 { margin: 0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+    .state.compact { padding: 14px 16px; text-align: left; }
+    .state.compact strong { font-size: 18px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>Navette · Chauffeur</h1>
+
+  <form id="login" hidden>
+    <p class="note">Entrer le jeton chauffeur (ou ouvrir le lien fourni par l'orga).</p>
+    <input id="token" type="password" autocomplete="off" placeholder="Jeton chauffeur" required>
+    <button type="submit" style="margin-top:10px;width:100%">Enregistrer</button>
+  </form>
+
+  <main id="panel" hidden>
+    <div class="state compact" id="state" data-s="idle">
+      <strong id="state-title">Suivi arrêté</strong>
+      <span id="state-sub">Appuie sur Démarrer en bas, ou lance Traccar Client.</span>
+    </div>
+
+    <div id="crew" style="margin-top:16px"></div>
+
+    <h2 style="margin-top:28px">Position GPS</h2>
+    <dl style="margin-top:10px">
+      <div><dt>Dernier envoi</dt><dd id="m-last">—</dd></div>
+      <div><dt>Précision GPS</dt><dd id="m-acc">—</dd></div>
+      <div><dt>Vitesse</dt><dd id="m-speed">—</dd></div>
+      <div><dt>Batterie</dt><dd id="m-batt">—</dd></div>
+      <div><dt>Positions envoyées</dt><dd id="m-count">0</dd></div>
+      <div><dt>Écran</dt><dd id="m-wake">—</dd></div>
+    </dl>
+
+    <div style="display:grid;gap:10px;margin-top:16px">
+      <button type="button" id="toggle">Démarrer</button>
+      <button type="button" class="secondary" id="logout">Changer de jeton</button>
+    </div>
+
+    <p class="note" style="margin-top:16px">
+      Si <strong>Traccar Client</strong> envoie déjà la position (recommandé :
+      il continue écran éteint), pas besoin de Démarrer ici : le compteur, le
+      départ et les signes marchent quand même. Sinon, laisser cette page au
+      premier plan, téléphone branché.
+    </p>
+  </main>
+
+  <script src="/crew.js"></script>
+  <script>
+    'use strict';
+    const SEND_EVERY_MS = 3000;
+    const $ = (id) => document.getElementById(id);
+    const KEY = 'navette-driver-token';
+    const RUN = 'navette-driver-running';
+
+    // Le jeton peut arriver dans le lien : /driver.html#t=XXXX (le # n'est jamais envoyé au serveur).
+    const fromHash = new URLSearchParams(location.hash.slice(1)).get('t');
+    if (fromHash) {
+      localStorage.setItem(KEY, fromHash);
+      history.replaceState(null, '', location.pathname);
+    }
+
+    let token = localStorage.getItem(KEY);
+    let watchId = null;
+    let wakeLock = null;
+    let pending = null;
+    let lastFix = null;
+    let sending = false;
+    let lastSentAt = 0;
+    let lastOkAt = 0;
+    let count = 0;
+    let battery = null;
+    let crew = null;
+
+    function show() {
+      $('login').hidden = !!token;
+      $('panel').hidden = !token;
+      if (token && !crew) {
+        crew = mountCrew($('crew'), { getToken: () => token, onState, onUnauthorized: () => setState('err', 'Jeton refusé', 'Vérifier le jeton chauffeur.') });
+      } else if (!token && crew) {
+        crew.stop();
+        crew = null;
+      }
+    }
+
+    /** Sans envoi depuis cette page, on montre si les positions arrivent par Traccar. */
+    function onState(data) {
+      if (watchId != null || !data) return;
+      const fix = data.last_fix;
+      const age = fix ? Math.round((data.snapshot.server_time - fix.ts) / 1000) : null;
+      if (age != null && age < 60) setState('ok', 'Position reçue', `Envoyée par une autre appli (Traccar), il y a ${age} s.`);
+      else if ($('state').dataset.s !== 'err') setState('idle', 'Aucune position reçue', 'Appuie sur Démarrer en bas, ou lance Traccar Client.');
+    }
+
+    function setState(s, title, sub) {
+      $('state').dataset.s = s;
+      $('state-title').textContent = title;
+      $('state-sub').textContent = sub;
+    }
+
+    async function keepAwake() {
+      if (!('wakeLock' in navigator)) {
+        $('m-wake').textContent = 'non géré';
+        return;
+      }
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        $('m-wake').textContent = 'reste allumé';
+        wakeLock.addEventListener('release', () => ($('m-wake').textContent = 'peut s\'éteindre'));
+      } catch {
+        $('m-wake').textContent = 'peut s\'éteindre';
+      }
+    }
+
+    async function flush() {
+      if (sending || !pending || Date.now() - lastSentAt < SEND_EVERY_MS) return;
+      const fix = pending;
+      pending = null;
+      sending = true;
+      lastSentAt = Date.now();
+      try {
+        const res = await fetch('/api/driver/position', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(fix),
+        });
+        if (res.status === 401) {
+          setState('err', 'Jeton refusé', 'Vérifier le jeton chauffeur.');
+          stop();
+          return;
+        }
+        if (!res.ok) throw new Error(res.status);
+        lastOkAt = Date.now();
+        count += 1;
+        $('m-count').textContent = count;
+        const body = await res.json();
+        if (body.accepted) setState('ok', 'Position envoyée', 'Tout fonctionne, bonne route !');
+        else setState('warn', 'Position ignorée', body.reason);
+      } catch {
+        setState('err', 'Pas de réseau', 'Nouvel essai automatique…');
+      } finally {
+        sending = false;
+      }
+    }
+
+    function onPosition(p) {
+      const c = p.coords;
+      pending = {
+        lat: c.latitude,
+        lon: c.longitude,
+        accuracy: c.accuracy,
+        speed: c.speed,
+        heading: Number.isFinite(c.heading) ? c.heading : null,
+        ts: p.timestamp,
+        battery,
+      };
+      lastFix = pending;
+      $('m-acc').textContent = `${Math.round(c.accuracy)} m`;
+      $('m-speed').textContent = c.speed != null ? `${Math.round(c.speed * 3.6)} km/h` : '—';
+      flush();
+    }
+
+    function onError(e) {
+      const msg = e.code === 1 ? 'Autoriser la localisation pour ce site.' : 'Recherche du signal GPS…';
+      setState(e.code === 1 ? 'err' : 'warn', 'GPS indisponible', msg);
+    }
+
+    function start() {
+      if (!('geolocation' in navigator)) {
+        setState('err', 'GPS non disponible', 'Ce navigateur ne donne pas accès à la position.');
+        return;
+      }
+      watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 20000,
+      });
+      localStorage.setItem(RUN, '1');
+      $('toggle').textContent = 'Arrêter';
+      setState('warn', 'Démarrage…', 'Recherche du signal GPS.');
+      keepAwake();
+    }
+
+    function stop() {
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+      pending = null;
+      wakeLock?.release();
+      wakeLock = null;
+      localStorage.removeItem(RUN);
+      $('toggle').textContent = 'Démarrer';
+      if ($('state').dataset.s !== 'err') setState('idle', 'Suivi arrêté', 'Appuie sur Démarrer en bas, ou lance Traccar Client.');
+      crew?.reload();
+    }
+
+    $('toggle').addEventListener('click', () => (watchId == null ? start() : stop()));
+    $('logout').addEventListener('click', () => {
+      stop();
+      localStorage.removeItem(KEY);
+      token = null;
+      show();
+    });
+    $('login').addEventListener('submit', (e) => {
+      e.preventDefault();
+      token = $('token').value.trim();
+      localStorage.setItem(KEY, token);
+      show();
+    });
+
+    // Le verrou d'écran saute quand la page passe en arrière-plan : on le reprend.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && watchId != null) keepAwake();
+    });
+
+    navigator.getBattery?.().then((b) => {
+      const update = () => {
+        battery = Math.round(b.level * 100);
+        $('m-batt').textContent = `${battery} %${b.charging ? ' ⚡' : ''}`;
+      };
+      update();
+      b.addEventListener('levelchange', update);
+      b.addEventListener('chargingchange', update);
+    });
+
+    setInterval(() => {
+      // À l'arrêt, certains téléphones ne signalent plus de nouvelle position :
+      // on renvoie la dernière (si elle a moins d'une minute) pour rester « en direct ».
+      if (watchId != null && !pending && lastFix && Date.now() - lastSentAt > 10_000 && Date.now() - lastFix.ts < 60_000) {
+        pending = { ...lastFix, ts: Date.now(), speed: 0, battery };
+      }
+      flush();
+      if (lastOkAt) {
+        const s = Math.round((Date.now() - lastOkAt) / 1000);
+        $('m-last').textContent = s < 60 ? `il y a ${s} s` : `il y a ${Math.floor(s / 60)} min`;
+        if (watchId != null && s > 60) setState('err', 'Plus d\'envoi depuis 1 min', 'Vérifier le réseau et le GPS.');
+      }
+    }, 1000);
+
+    show();
+    if (token && localStorage.getItem(RUN)) start();
+  </script>
+</body>
+</html>
