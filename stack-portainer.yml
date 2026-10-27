@@ -1,0 +1,46 @@
+# Stack tout-en-un pour Portainer (à coller dans l'éditeur web, ou à choisir
+# comme fichier d'une stack « Repository ») : la navette + Caddy, qui obtient
+# et renouvelle les certificats HTTPS tout seul.
+#
+# Variables à définir dans « Environment variables » de la stack :
+#   NAVETTE_DRIVER_TOKEN, NAVETTE_ADMIN_TOKEN
+#
+# Prérequis : ports 80 et 443 libres sur le serveur. navette.jcloud.ik-server.com
+# marche dès le déploiement (pour tester) ; navette.ragnarok-festival.ch dès
+# que son DNS pointe vers le serveur.
+
+services:
+  navette:
+    image: ghcr.io/redik123/navette:latest
+    restart: unless-stopped
+    environment:
+      NAVETTE_DRIVER_TOKEN: ${NAVETTE_DRIVER_TOKEN:?NAVETTE_DRIVER_TOKEN manquant}
+      NAVETTE_ADMIN_TOKEN: ${NAVETTE_ADMIN_TOKEN:?NAVETTE_ADMIN_TOKEN manquant}
+    volumes:
+      - navette-data:/app/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - navette
+    # Caddyfile écrit au démarrage : aucun fichier à monter depuis Portainer.
+    # Pas de compression : elle casserait le flux temps réel.
+    command:
+      - sh
+      - -c
+      - |
+        printf '%s\n' 'navette.ragnarok-festival.ch, navette.jcloud.ik-server.com {' '  reverse_proxy navette:8080' '}' > /etc/caddy/Caddyfile
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  navette-data:
+  caddy-data:
+  caddy-config:

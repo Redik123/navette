@@ -177,6 +177,15 @@ serveur.
 
 ### Avec Portainer
 
+**Le plus simple** (serveur avec sa propre IP, ports 80/443 libres, comme
+`navette.jcloud.ik-server.com`) : *Stacks* → *Add stack* → **Web editor**,
+coller le contenu de [`stack-portainer.yml`](stack-portainer.yml), renseigner
+`NAVETTE_DRIVER_TOKEN` et `NAVETTE_ADMIN_TOKEN` dans *Environment variables*,
+puis *Deploy the stack*. La navette et Caddy (HTTPS automatique) démarrent
+ensemble.
+
+**Avec un dépôt Git et un proxy existant** :
+
 1. *Stacks* → *Add stack* → **Repository**.
 2. URL : `https://github.com/Redik123/navette`, référence `refs/heads/main`,
    fichier : `docker-compose.yml`.
