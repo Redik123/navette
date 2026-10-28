@@ -87,7 +87,7 @@
 .crew .crew-note { margin: 0; color: var(--muted); font-size: 13px; }
 .crew .crew-note:empty { display: none; }
 
-.crew .crew-pickups h2 { margin: 8px 0; }
+.crew h2 { margin: 8px 0; }
 .crew .crew-pickups ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 
 .crew .crew-pickup {
@@ -108,3 +108,39 @@
 
 .crew .crew-pickup button { min-width: 72px; min-height: 48px; }
 .crew .crew-pickup .crew-picked { border-color: var(--green); color: var(--green); }
+
+/* Service et message : moins urgents, en bas des commandes. */
+.crew .crew-service, .crew .crew-message { display: grid; gap: 8px; margin-top: 12px; }
+
+.crew .crew-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+.crew .crew-modes button[aria-pressed="true"] {
+  border-color: var(--violet);
+  background: var(--surface-2, #1c1923);
+  color: var(--violet);
+}
+
+.crew textarea, .crew select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+}
+
+.crew textarea { min-height: 84px; resize: vertical; }
+
+.crew .crew-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.crew .crew-presets button {
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.crew .crew-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.crew .crew-publish { border-color: var(--orange); background: var(--orange); color: #1b0c00; }

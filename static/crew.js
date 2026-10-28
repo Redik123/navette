@@ -2,7 +2,8 @@
 
 // Commandes de l'équipage, partagées par la page chauffeur et la page orga :
 // personnes à bord, annonce du départ, signes des gens qui attendent sur le
-// trajet. Toute la logique (arrivée, remise à zéro, passage) est côté serveur.
+// trajet, mode de service et message aux festivaliers. Toute la logique
+// (arrivée, remise à zéro, passage) est côté serveur.
 
 (() => {
   const POLL_MS = 3000;
@@ -12,6 +13,13 @@
   const NEW_MS = 20_000;
 
   const TIME_FMT = new Intl.DateTimeFormat('fr-CH', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich' });
+
+  const PRESETS = [
+    'Navette retardée d\'environ 10 minutes.',
+    'Navette pleine, elle revient dans une quinzaine de minutes.',
+    'Dernier départ de l\'Usine de Chandoline à 05:00.',
+    'Trafic perturbé, merci de votre patience.',
+  ];
 
   const TEMPLATE = `
     <section class="crew-seats">
@@ -34,7 +42,31 @@
       <ol></ol>
       <p class="crew-note crew-empty">Personne n'attend sur le trajet.</p>
     </section>
-    <p class="crew-note">À manipuler à l'arrêt, jamais en roulant. Le compteur repart de zéro à chaque arrêt.</p>`;
+    <p class="crew-note">À manipuler à l'arrêt, jamais en roulant. Le compteur repart de zéro à chaque arrêt.</p>
+    <section class="crew-service">
+      <h2>Service</h2>
+      <div class="crew-modes">
+        <button type="button" data-mode="auto" aria-pressed="false">Auto</button>
+        <button type="button" data-mode="pause" aria-pressed="false">Pause</button>
+        <button type="button" data-mode="off" aria-pressed="false">Hors service</button>
+      </div>
+      <p class="crew-note">Auto : le statut suit les positions du téléphone. Pause : position visible, sans temps d'attente. Hors service : navette masquée.</p>
+    </section>
+    <section class="crew-message">
+      <h2>Message aux festivaliers</h2>
+      <textarea class="crew-msg" maxlength="280" aria-label="Message aux festivaliers" placeholder="Ex. : Navette retardée d'environ 10 minutes."></textarea>
+      <div class="crew-presets">${PRESETS.map((p) => `<button type="button" data-preset>${p}</button>`).join('')}</div>
+      <select class="crew-level" aria-label="Niveau du message">
+        <option value="info">Info (violet)</option>
+        <option value="warn">Attention (orange)</option>
+        <option value="alert">Urgent (rouge)</option>
+      </select>
+      <div class="crew-actions">
+        <button type="button" class="crew-publish">Publier</button>
+        <button type="button" class="crew-clear">Effacer</button>
+      </div>
+      <p class="crew-note crew-current" aria-live="polite"></p>
+    </section>`;
 
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -84,6 +116,7 @@
     const seen = new Map(); // id → première apparition
     const rows = new Map(); // id → ligne affichée
     let firstLoad = true;
+    let noteUntil = 0;
 
     async function api(path, body) {
       const res = await fetch(path, {
@@ -178,6 +211,29 @@
         beep();
       }
       firstLoad = false;
+
+      for (const b of root.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === snap.service));
+      if (Date.now() > noteUntil) {
+        q('.crew-current').textContent = snap.message ? `Affiché actuellement : « ${snap.message.text} »` : 'Aucun message affiché.';
+      }
+    }
+
+    /** Message d'erreur à la place de « Affiché actuellement », le temps de le lire. */
+    function fail(text) {
+      noteUntil = Date.now() + 6000;
+      q('.crew-current').textContent = text;
+    }
+
+    async function send(button, path, body) {
+      button.disabled = true;
+      try {
+        await api(path, body);
+        noteUntil = 0;
+      } catch {
+        fail('Pas envoyé : vérifie le réseau et réessaie.');
+      }
+      button.disabled = false;
+      load();
     }
 
     async function load() {
@@ -205,6 +261,21 @@
         await api('/api/crew/pickup', { id: b.dataset.id, action: b.dataset.action }).catch(() => {});
         if (b.dataset.action === 'picked') holdUntil = 0; // le serveur a ajouté les personnes
         load();
+      } else if (b.dataset.mode) {
+        if (b.dataset.mode === 'off' && !confirm('Masquer la navette pour le public ?')) return;
+        send(b, '/api/crew/service', { mode: b.dataset.mode });
+      } else if (b.hasAttribute('data-preset')) {
+        q('.crew-msg').value = b.textContent;
+      } else if (b.classList.contains('crew-publish')) {
+        const text = q('.crew-msg').value.trim();
+        if (!text) {
+          fail('Écris un message ou choisis-en un ci-dessus.');
+          return;
+        }
+        send(b, '/api/crew/message', { text, level: q('.crew-level').value });
+      } else if (b.classList.contains('crew-clear')) {
+        q('.crew-msg').value = '';
+        send(b, '/api/crew/message', { text: '' });
       }
     });
 

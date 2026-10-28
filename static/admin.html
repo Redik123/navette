@@ -28,25 +28,17 @@
     .card dt { color: var(--muted); font-size: 12px; }
     .card dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .ok { color: var(--green); } .warn { color: var(--amber); } .err { color: var(--red); }
-    button, input, textarea, select { font: inherit; color: inherit; }
+    button, input { font: inherit; color: inherit; }
     button {
       min-height: 44px; padding: 8px 16px; border-radius: 12px; border: 1px solid var(--line);
       background: var(--surface); font-weight: 700; cursor: pointer;
     }
     button.primary { background: var(--orange); color: #1b0c00; border-color: var(--orange); }
-    .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .modes button[aria-pressed="true"] { border-color: var(--violet); background: var(--surface-2); color: var(--violet); }
-    textarea, input, select {
-      width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface);
-    }
-    textarea { min-height: 84px; resize: vertical; }
+    input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
     .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
     .row > * { flex: 1; }
-    .row select { flex-basis: 100%; }
     .ext { display: inline-flex; align-items: center; gap: 4px; }
     .ext svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .presets button { min-height: 40px; padding: 6px 12px; font-weight: 600; text-align: left; }
     .note { color: var(--muted); font-size: 12px; }
     [hidden] { display: none !important; }
   </style>
@@ -78,33 +70,6 @@
 
     <h2>Navette</h2>
     <div id="crew"></div>
-
-    <h2>Service</h2>
-    <div class="modes" id="modes">
-      <button type="button" data-mode="auto">Auto</button>
-      <button type="button" data-mode="pause">Pause</button>
-      <button type="button" data-mode="off">Hors service</button>
-    </div>
-    <p class="note">Auto : le statut suit les positions du téléphone. Pause : position visible, sans temps d'attente. Hors service : navette masquée.</p>
-
-    <h2>Message aux festivaliers</h2>
-    <textarea id="msg" maxlength="280" placeholder="Ex. : Navette retardée d'environ 10 minutes."></textarea>
-    <div class="presets" id="presets">
-      <button type="button">Navette retardée d'environ 10 minutes.</button>
-      <button type="button">Navette pleine, elle revient dans une quinzaine de minutes.</button>
-      <button type="button">Dernier départ de l'Usine de Chandoline à 05:00.</button>
-      <button type="button">Trafic perturbé, merci de votre patience.</button>
-    </div>
-    <div class="row">
-      <select id="level" aria-label="Niveau du message">
-        <option value="info">Info (violet)</option>
-        <option value="warn">Attention (orange)</option>
-        <option value="alert">Urgent (rouge)</option>
-      </select>
-      <button type="button" class="primary" id="publish">Publier</button>
-      <button type="button" id="clear">Effacer</button>
-    </div>
-    <p class="note" id="current-msg"></p>
 
     <div class="row" style="margin-top:32px"><button type="button" id="logout">Se déconnecter</button></div>
   </main>
@@ -140,20 +105,6 @@
       show();
     }
 
-    async function api(path, body) {
-      const res = await fetch(path, {
-        method: body ? 'POST' : 'GET',
-        headers: { Authorization: `Bearer ${token}`, ...(body && { 'Content-Type': 'application/json' }) },
-        body: body && JSON.stringify(body),
-      });
-      if (res.status === 401) {
-        logout();
-        throw new Error('jeton refusé');
-      }
-      if (!res.ok) throw new Error(res.status);
-      return res.status === 204 ? null : res.json();
-    }
-
     function set(id, text, cls = '') {
       $(id).textContent = text;
       $(id).className = cls;
@@ -184,33 +135,7 @@
       $('s-next').textContent = snap.bus && !snap.bus.on_route
         ? 'Attention : la navette est hors du tracé.'
         : next ? `Prochain arrêt : ${next.name} dans ~${Math.max(1, Math.round(next.eta_s / 60))} min.` : '';
-
-      for (const b of $('modes').children) b.setAttribute('aria-pressed', String(b.dataset.mode === snap.service));
-      $('current-msg').textContent = snap.message ? `Affiché actuellement : « ${snap.message.text} »` : 'Aucun message affiché.';
     }
-
-    $('modes').addEventListener('click', async (e) => {
-      const mode = e.target.closest('button')?.dataset.mode;
-      if (!mode) return;
-      if (mode === 'off' && !confirm('Masquer la navette pour le public ?')) return;
-      await api('/api/admin/service', { mode });
-      crew?.reload();
-    });
-
-    $('presets').addEventListener('click', (e) => {
-      if (e.target.tagName === 'BUTTON') $('msg').value = e.target.textContent;
-    });
-
-    $('publish').addEventListener('click', async () => {
-      await api('/api/admin/message', { text: $('msg').value, level: $('level').value });
-      crew?.reload();
-    });
-
-    $('clear').addEventListener('click', async () => {
-      $('msg').value = '';
-      await api('/api/admin/message', { text: '' });
-      crew?.reload();
-    });
 
     $('login').addEventListener('submit', (e) => {
       e.preventDefault();

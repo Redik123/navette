@@ -10,8 +10,8 @@ dans le bus envoie sa position GPS à un petit serveur Rust, qui la diffuse
 ```
  Téléphone du bus ──(GPS toutes les 3-5 s, HTTPS)──▶  Serveur Rust (axum)
  Traccar Client ou /driver.html                       · accroche la position au tracé
- Chauffeur ──▶ /driver.html (à bord, « On part »)     · calcule statut + ETA
- Orga ──▶ /admin.html (idem + message, pause)         · gère les signes sur le trajet
+ Chauffeur ──▶ /driver.html (à bord, message, pause) · calcule statut + ETA
+ Orga ──▶ /admin.html (idem + tableau de bord)        · gère les signes sur le trajet
                                                       · diffuse en SSE
                                                             │
        Festivaliers ◀── page / (Leaflet, « Faire signe ») ──┘
@@ -47,8 +47,8 @@ Confédération, pas par notre serveur.
 | Adresse | Pour qui |
 |---|---|
 | `/` | Le public : carte, tracé, navette en direct, places libres, temps d'attente, « Faire signe », prochains trains, « Me localiser » |
-| `/driver.html` | Le chauffeur : personnes à bord, « On part », signes sur le trajet (et le GPS si Traccar Client n'est pas utilisé) |
-| `/admin.html` | L'orga : les mêmes commandes, plus statut, batterie du téléphone, message aux festivaliers, pause / hors service |
+| `/driver.html` | Le chauffeur : personnes à bord, « On part », signes sur le trajet, message aux festivaliers, auto / pause / hors service (et le GPS si Traccar Client n'est pas utilisé) |
+| `/admin.html` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés) |
 
 ## Pas d'horaire : comment ça marche
 
@@ -250,7 +250,7 @@ derrière n'importe quel proxy HTTPS.
 - [ ] Un téléphone de secours configuré pareil (même identifiant), éteint, dans la boîte à gants
 - [ ] `/driver.html` ouvert sur le téléphone du chauffeur : compteur à 0, un essai de « On part »
 - [ ] Un essai de « Faire signe » sur le trajet avec un téléphone de l'orga, puis « Ignorer »
-- [ ] Mode **Auto** dans l'admin à l'ouverture, **Hors service** à la fermeture (efface aussi les signes en cours)
+- [ ] Mode **Auto** (page chauffeur ou admin) à l'ouverture, **Hors service** à la fermeture (efface aussi les signes en cours)
 - [ ] QR code vers la page affiché à la gare, à l'entrée, aux bars
 
 ## API
@@ -269,8 +269,8 @@ derrière n'importe quel proxy HTTPS.
 | POST | `/api/crew/passengers` | `{"passengers": 9}` |
 | POST | `/api/crew/depart` | Annonce le départ |
 | POST | `/api/crew/pickup` | `{"id": "...", "action": "picked" \| "dismissed"}` |
-| POST | `/api/admin/service` | `{"mode": "auto" \| "pause" \| "off"}` (`Bearer <admin>`) |
-| POST | `/api/admin/message` | `{"text": "...", "level": "info" \| "warn" \| "alert"}` (texte vide = effacer) |
+| POST | `/api/crew/service` | `{"mode": "auto" \| "pause" \| "off"}` |
+| POST | `/api/crew/message` | `{"text": "...", "level": "info" \| "warn" \| "alert"}` (texte vide = effacer) |
 
 ## Code
 

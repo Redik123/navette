@@ -40,8 +40,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/crew/passengers", post(crew_passengers))
         .route("/api/crew/depart", post(crew_depart))
         .route("/api/crew/pickup", post(crew_pickup))
-        .route("/api/admin/service", post(admin_service))
-        .route("/api/admin/message", post(admin_message))
+        .route("/api/crew/service", post(crew_service))
+        .route("/api/crew/message", post(crew_message))
         .with_state(state)
         .fallback_service(static_dir)
         // Le flux SSE est exclu d'office par le prédicat par défaut.
@@ -448,19 +448,17 @@ async fn crew_pickup(
     }
 }
 
-// ---------------------------------------------------------------- admin
-
 #[derive(Deserialize)]
 struct ServiceBody {
     mode: ServiceMode,
 }
 
-async fn admin_service(
+async fn crew_service(
     State(st): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<ServiceBody>,
 ) -> Response {
-    if !authorized(&headers, st.cfg.admin_token()) {
+    if !crew(&headers, &st) {
         return unauthorized();
     }
     st.set_service(body.mode);
@@ -474,12 +472,12 @@ struct MessageBody {
     level: MessageLevel,
 }
 
-async fn admin_message(
+async fn crew_message(
     State(st): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<MessageBody>,
 ) -> Response {
-    if !authorized(&headers, st.cfg.admin_token()) {
+    if !crew(&headers, &st) {
         return unauthorized();
     }
     let text: String = body.text.trim().chars().take(280).collect();
