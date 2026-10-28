@@ -125,7 +125,7 @@ function setupMap(cfg) {
   const map = L.map('map', { zoomControl: false, attributionControl: false });
   app.map = map;
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  L.control.attribution({ position: 'topright', prefix: '<a href="https://leafletjs.com">Leaflet</a>' }).addTo(map);
+  L.control.attribution({ position: 'bottomleft', prefix: '<a href="https://leafletjs.com">Leaflet</a>' }).addTo(map);
   // Carte nationale swisstopo (gratuite, sans clé), assombrie en CSS.
   L.tileLayer('https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/3857/{z}/{x}/{y}.jpeg', {
     minZoom: 12,

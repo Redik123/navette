@@ -1,5 +1,13 @@
 /* Navette · Ragnarok Festival */
 
+/* Police du festival (ragnarok-events.ch), pour le logo. */
+@font-face {
+  font-family: "Norse";
+  src: url("/fonts/Norsebold.otf") format("opentype");
+  font-weight: 700;
+  font-display: swap;
+}
+
 :root {
   --bg: #0a0a0a;
   --surface: #121016;
@@ -44,6 +52,8 @@ a { color: var(--violet); }
 
 button { font: inherit; color: inherit; }
 
+:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+
 /* ------------------------------------------------------------ en-tête */
 
 .topbar {
@@ -69,9 +79,10 @@ button { font: inherit; color: inherit; }
 
 .wordmark {
   font-family: var(--display);
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: 0.28em;
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -222,7 +233,7 @@ button { font: inherit; color: inherit; }
 .pill.live { color: var(--green); }
 .pill.stop { color: var(--violet); }
 .pill.warn { color: var(--amber); }
-.pill.off { color: var(--grey); }
+.pill.off { color: var(--muted); }
 .pill.live::before { animation: blink 1.6s ease-in-out infinite; }
 
 h1 {
@@ -547,7 +558,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 14px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -618,6 +629,9 @@ h2 {
 }
 
 .leaflet-container { font: inherit; background: #0d0c10; }
+
+/* Crédits et zoom au-dessus du panneau sur mobile, comme « Me localiser ». */
+.leaflet-bottom { bottom: var(--sheet-h, 0px); }
 
 /* Carte swisstopo grise inversée → fond sombre légèrement violet. */
 .leaflet-tile-pane { filter: invert(1) hue-rotate(200deg) saturate(0.3) brightness(0.48) contrast(1.2); }

@@ -126,7 +126,7 @@
       const btn = q('.crew-depart');
       const waiting = snap.status === 'at_stop';
       btn.classList.toggle('ready', waiting);
-      btn.textContent = snap.status === 'departing' ? 'Départ annoncé ✓' : 'On part';
+      btn.textContent = snap.status === 'departing' ? 'Départ annoncé' : 'On part';
       const dep = snap.departure;
       const stop = (id) => names.get(id) ?? id;
       q('.crew-depart-note').textContent = waiting

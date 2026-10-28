@@ -1,6 +1,8 @@
 /* Commandes de l'équipage (pages chauffeur et orga). Gros boutons : on s'en
    sert debout, de nuit, avec des gens autour. */
 
+:focus-visible { outline: 2px solid var(--violet, #a78bfa); outline-offset: 2px; }
+
 .crew { display: grid; gap: 12px; }
 
 /* Base commune, indépendante du style des boutons de chaque page. */

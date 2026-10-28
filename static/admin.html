@@ -42,6 +42,9 @@
     textarea { min-height: 84px; resize: vertical; }
     .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
     .row > * { flex: 1; }
+    .row select { flex-basis: 100%; }
+    .ext { display: inline-flex; align-items: center; gap: 4px; }
+    .ext svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .presets button { min-height: 40px; padding: 6px 12px; font-weight: 600; text-align: left; }
     .note { color: var(--muted); font-size: 12px; }
@@ -51,7 +54,8 @@
 <body>
   <header>
     <h1>Navette · Orga</h1>
-    <a href="/" target="_blank" rel="noopener">Page publique ↗</a>
+    <a class="ext" href="/" target="_blank" rel="noopener">Page publique
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>
   </header>
 
   <form id="login" hidden>
