@@ -56,7 +56,7 @@ Confédération, pas par notre serveur.
 |---|---|
 | `/` | Le public : carte, tracé, navette en direct, places libres, temps d'attente, « Faire signe », prochains trains, « Me localiser » |
 | `/driver` | Le chauffeur : petite carte (navette, signes, demandes d'aide), personnes à bord, « On part », signes sur le trajet, message aux festivaliers, auto / pause / hors service (et le GPS si Traccar Client n'est pas utilisé) |
-| `/admin` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés) et l'**éditeur de trajet** |
+| `/admin` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés) et l'**éditeur de trajet**. En tête, des liens vers la page publique et vers `/driver`, ouverte déjà connectée avec le jeton orga : le téléphone de l'orga peut ainsi prendre le relais pour envoyer la position GPS |
 
 **Route barrée ?** Dans `/admin`, section « Trajet » : les points blancs
 sont les points de passage de l'aller (le retour reprend le même chemin). On

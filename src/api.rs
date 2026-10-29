@@ -190,12 +190,13 @@ struct DriverFix {
 }
 
 /// Positions envoyées par la page `/driver` ouverte sur le téléphone du bus.
+/// Le jeton orga est accepté aussi : son téléphone peut prendre le relais.
 async fn driver_position(
     State(st): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<DriverFix>,
 ) -> Response {
-    if !authorized(&headers, st.cfg.driver_token()) {
+    if !crew(&headers, &st) {
         warn!("position refusée : jeton chauffeur invalide");
         return unauthorized();
     }

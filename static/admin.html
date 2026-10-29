@@ -15,8 +15,13 @@
 <body>
   <header class="crew-top">
     <div class="crew-brand"><span class="wordmark">Ragnarok</span><span class="crew-role">Orga</span></div>
-    <a href="/" target="_blank" rel="noopener">Page publique
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></svg></a>
+    <nav class="crew-links" aria-label="Autres pages">
+      <a href="/" target="_blank" rel="noopener">Publique
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></svg></a>
+      <!-- Ouvre /driver déjà connecté avec le jeton orga (le # n'est jamais envoyé au serveur). -->
+      <a id="driver-link" href="/driver" target="_blank" rel="noopener">Chauffeur
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></svg></a>
+    </nav>
   </header>
 
   <form id="login" hidden>
@@ -81,6 +86,7 @@
     function show() {
       $('login').hidden = !!token;
       $('panel').hidden = !token;
+      $('driver-link').href = token ? `/driver#t=${encodeURIComponent(token)}` : '/driver';
       if (token && !crew) {
         crew = mountCrew($('crew'), { getToken: () => token, onState: render, onUnauthorized: logout });
         routeEditor ??= mountRouteEditor({ getToken: () => token, onUnauthorized: logout });

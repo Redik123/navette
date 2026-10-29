@@ -88,6 +88,8 @@ h2 { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
   font-weight: 600;
 }
 
+.crew-links { display: flex; gap: 16px; }
+
 .crew-top a svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; }
 
 /* ------------------------------------------------------------ blocs */
