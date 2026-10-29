@@ -1,4 +1,7 @@
-/* Navette · Ragnarok Festival */
+/* Navette · Ragnarok Festival
+   Univers « pochette de catalogue » : noir mat, filets blancs, un code
+   couleur industriel par arrêt (bleu gare, jaune Usine), rouge pour la
+   navette. Pas de lueur, pas d'arrondi : l'information est un tracé. */
 
 /* Police du festival (ragnarok-events.ch), pour le logo. */
 @font-face {
@@ -9,36 +12,36 @@
 }
 
 :root {
-  --bg: #0a0a0a;
-  --surface: #121016;
-  --surface-2: #1c1923;
-  --line: #2a2533;
-  --text: #f1f5f9;
-  --muted: #a39cb0;
-  --violet: #a78bfa;
-  --violet-deep: #7c3aed;
-  --violet-glow: rgba(167, 139, 250, 0.55);
-  --orange: #ff7a1a;
-  --orange-glow: rgba(255, 122, 26, 0.6);
-  --green: #4ade80;
-  --amber: #fbbf24;
-  --blue: #38bdf8;
-  --blue-glow: rgba(56, 189, 248, 0.55);
-  --sbb-red: #eb0000;
-  --grey: #77708a;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ink: #0b0b0a;
+  --ink-2: #151513;
+  --paper: #f2f1ec;
+  --muted: #a3a29b;
+  --rule: rgba(242, 241, 236, 0.2);
+  --rule-strong: rgba(242, 241, 236, 0.55);
+  --grey: #6f6e68;
+  --blue: #2f66d8;
+  --yellow: #f2c300;
+  --red: #e2321f;
+  /* Noirs transparents : l'ombre du panneau sur la carte, le fond des fenêtres, les crédits. */
+  --shadow: rgba(0, 0, 0, 0.6);
+  --scrim: rgba(0, 0, 0, 0.75);
+  --veil: rgba(11, 11, 10, 0.8);
+  --font: "Archivo Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --display: "Norse", var(--font);
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
+/* Les blocs mis en flex ou en grille restent cachables par l'attribut hidden. */
+[hidden] { display: none !important; }
+
 html, body {
   height: 100%;
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 15px/1.45 var(--font);
+  background: var(--ink);
+  color: var(--paper);
+  font: 400 15px/1.45 var(--font);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -48,11 +51,19 @@ body {
   overflow: hidden;
 }
 
-a { color: var(--violet); }
+a { color: var(--paper); text-underline-offset: 3px; }
 
 button { font: inherit; color: inherit; }
 
-:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+/* Étiquette gravée : capitales larges et espacées, la voix du système. */
+.caps, h2, .pill, .conn, .brand-sub, .eta-time small, .leg-name, .stop-label {
+  font-stretch: 125%;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
 
 /* ------------------------------------------------------------ en-tête */
 
@@ -62,37 +73,32 @@ button { font: inherit; color: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: 52px;
+  height: 56px;
   padding: 0 16px;
   padding-top: env(safe-area-inset-top);
-  border-bottom: 1px solid var(--line);
-  background: var(--bg);
+  border-bottom: 1px solid var(--rule);
+  background: var(--ink);
 }
 
 .brand {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  color: var(--text);
+  align-items: center;
+  gap: 12px;
+  color: var(--paper);
   text-decoration: none;
 }
 
 .wordmark {
   font-family: var(--display);
   font-weight: 700;
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.brand-sub {
-  color: var(--violet);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
+.brand-sub { font-size: 12px; color: var(--paper); white-space: nowrap; }
+.sub-short { display: none; }
 
 .conn {
   display: flex;
@@ -100,31 +106,36 @@ button { font: inherit; color: inherit; }
   gap: 8px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
+  white-space: nowrap;
 }
 
-.conn-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--grey);
+@media (max-width: 640px) {
+  .sub-long { display: none; }
+  .sub-short { display: inline; }
 }
 
-.conn[data-state="live"] .conn-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
-.conn[data-state="retry"] .conn-dot { background: var(--amber); }
+@media (max-width: 400px) {
+  .brand { gap: 10px; }
+  .brand-sub, .conn { font-size: 11px; letter-spacing: 0.1em; }
+}
+
+.conn-dot { width: 8px; height: 8px; border: 1px solid var(--grey); }
+.conn[data-state="live"] { color: var(--paper); }
+.conn[data-state="live"] .conn-dot { border-color: var(--red); background: var(--red); }
+.conn[data-state="retry"] .conn-dot { border-color: var(--yellow); }
 
 /* ------------------------------------------------------------ bandeau */
 
 .banner {
   flex: none;
-  padding: 10px 16px;
+  padding: 12px 16px;
   font-weight: 600;
-  border-bottom: 1px solid var(--line);
-  background: #2e1065;
+  background: var(--blue);
+  color: var(--paper);
 }
 
-.banner[data-level="warn"] { background: #713f12; }
-.banner[data-level="alert"] { background: #7f1d1d; }
+.banner[data-level="warn"] { background: var(--yellow); color: var(--ink); }
+.banner[data-level="alert"] { background: var(--red); color: var(--paper); }
 
 /* ------------------------------------------------------------ mise en page */
 
@@ -143,7 +154,7 @@ button { font: inherit; color: inherit; }
 #map {
   position: absolute;
   inset: 0;
-  background: #0d0c10;
+  background: var(--ink);
 }
 
 .sheet {
@@ -152,24 +163,23 @@ button { font: inherit; color: inherit; }
   right: 0;
   bottom: 0;
   z-index: 10;
-  max-height: 50%;
+  max-height: 52%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 6px 16px calc(14px + env(safe-area-inset-bottom));
-  background: var(--surface);
-  border-top: 1px solid var(--line);
-  border-radius: 20px 20px 0 0;
-  box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.65);
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--ink);
+  border-top: 1px solid var(--rule-strong);
+  box-shadow: 0 -12px 32px var(--shadow);
   transition: max-height 0.25s ease;
 }
 
-.sheet.collapsed { max-height: 132px; overflow: hidden; }
+.sheet.collapsed { max-height: 190px; overflow: hidden; }
 
 .handle {
   display: block;
   width: 100%;
-  height: 22px;
-  margin: 0 0 2px;
+  height: 20px;
+  margin: 0;
   padding: 0;
   border: 0;
   background: none;
@@ -179,17 +189,16 @@ button { font: inherit; color: inherit; }
 .handle::before {
   content: "";
   display: block;
-  width: 40px;
-  height: 4px;
+  width: 36px;
+  height: 3px;
   margin: 0 auto;
-  border-radius: 2px;
-  background: var(--line);
+  background: var(--rule-strong);
 }
 
 @media (min-width: 860px) {
   .layout {
     display: grid;
-    grid-template-columns: 380px 1fr;
+    grid-template-columns: 400px 1fr;
   }
   .map-wrap { position: relative; grid-column: 2; }
   .sheet {
@@ -197,10 +206,9 @@ button { font: inherit; color: inherit; }
     grid-column: 1;
     grid-row: 1;
     max-height: none;
-    padding: 20px 24px 24px;
+    padding: 8px 24px 24px;
     border-top: 0;
-    border-right: 1px solid var(--line);
-    border-radius: 0;
+    border-right: 1px solid var(--rule-strong);
     box-shadow: none;
   }
   .sheet.collapsed { max-height: none; overflow-y: auto; }
@@ -209,69 +217,129 @@ button { font: inherit; color: inherit; }
 
 /* ------------------------------------------------------------ statut */
 
+/* Le carré de code couleur de l'état, le titre, puis le temps d'arrivée en grand. */
+.status-head {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: start;
+  gap: 12px;
+  padding-top: 4px;
+}
+
 .pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  width: 14px;
+  height: 14px;
+  margin-top: 7px;
+  border: 1px solid var(--grey);
 }
 
-.pill::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.pill.live { color: var(--green); }
-.pill.stop { color: var(--violet); }
-.pill.warn { color: var(--amber); }
-.pill.off { color: var(--muted); }
-.pill.live::before { animation: blink 1.6s ease-in-out infinite; }
+.pill.live { border-color: var(--red); background: var(--red); }
+.pill.stop { border-color: var(--yellow); background: var(--yellow); }
+.pill.warn { border: 1px dashed var(--yellow); }
 
 h1 {
-  margin: 10px 0 4px;
-  font-size: 22px;
-  line-height: 1.2;
+  margin: 0;
+  font-size: 23px;
+  font-stretch: 112%;
+  font-weight: 300;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
   text-wrap: balance;
 }
 
-.status-sub { margin: 0; color: var(--text); opacity: 0.85; }
+.status-eta {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin: -6px 0 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.status-eta strong {
+  font-size: 60px;
+  font-stretch: 112%;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.status-eta span {
+  font-size: 13px;
+  font-stretch: 125%;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.status-sub { margin: 12px 0 0; max-width: 46ch; }
 .status-sub:empty { display: none; }
-.updated { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+.updated { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
 .updated:empty { display: none; }
 
-/* Places à bord : une case par siège. */
+/* Places à bord : une case par siège, comme une bande de code. */
 .seats {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
-  margin-top: 10px;
-  font-size: 14px;
-  font-weight: 650;
+  gap: 8px 14px;
+  margin-top: 14px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
-.seats.full .seats-text { color: var(--amber); }
-
-.seats-bar { display: flex; gap: 3px; }
+.seats-bar { display: flex; gap: 2px; }
 
 .seats-bar i {
-  width: 8px;
-  height: 14px;
-  border: 1.5px solid var(--grey);
-  border-radius: 2px;
+  width: 11px;
+  height: 18px;
+  border: 1px solid var(--rule-strong);
 }
 
-.seats-bar i.taken { border-color: var(--orange); background: var(--orange); }
-.seats.full .seats-bar i { border-color: var(--amber); background: var(--amber); }
+.seats-bar i.taken { border-color: var(--paper); background: var(--paper); }
+.seats.full .seats-bar i { border-color: var(--red); background: var(--red); }
+
+/* ------------------------------------------------------------ tracé (signature) */
+
+/* Chaque trajet est une ligne ; la navette y fait une bosse là où elle est.
+   Le trajet en cours passe en premier, pour rester visible panneau replié. */
+.trace { display: grid; gap: 14px; margin-top: 14px; }
+.leg.active { order: -1; }
+
+.leg-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+
+.leg.active .leg-name { color: var(--paper); }
+
+.leg-line {
+  display: grid;
+  grid-template-columns: 10px 1fr 10px;
+  align-items: end;
+  gap: 6px;
+  height: 46px;
+}
+
+.leg-end { width: 10px; height: 10px; margin-bottom: 1px; background: var(--c); }
+
+.leg svg { display: block; width: 100%; height: 46px; overflow: visible; }
+.leg path { fill: none; stroke: var(--rule-strong); stroke-width: 1.5; stroke-linejoin: round; }
+.leg.active path { stroke: var(--paper); }
+.leg .peak-mark { fill: var(--red); }
+.trace.dim .leg.active path { stroke: var(--grey); }
+.trace.dim .peak-mark { fill: var(--grey); }
+
+/* À quai : la bosse respire, la navette attend de partir. */
+.trace.waiting .peak { animation: breathe 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+
+@keyframes breathe {
+  50% { transform: scaleY(0.55); }
+}
 
 /* ------------------------------------------------------------ boutons */
 
@@ -281,42 +349,130 @@ h1 {
   min-height: 48px;
   margin-top: 10px;
   padding: 10px 18px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--violet-deep);
-  color: #fff;
+  border: 1px solid var(--paper);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+  font-stretch: 112%;
+  cursor: pointer;
+}
+
+.btn.ghost { border-color: var(--rule-strong); background: transparent; color: var(--paper); }
+.btn.danger { border-color: var(--red); background: var(--red); color: var(--paper); }
+a.btn { text-align: center; text-decoration: none; line-height: 26px; }
+.btn.ghost:hover { border-color: var(--paper); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ------------------------------------------------------------ demander de l'aide */
+
+.help-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--red);
+  background: var(--ink);
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
 
-.btn.ghost { border: 1px solid var(--line); background: transparent; color: var(--text); }
-.btn:disabled { opacity: 0.45; cursor: default; }
+.help-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 2;
+  stroke-linejoin: miter;
+}
+
+/* Mon alerte en cours : en tête du panneau, impossible à rater. */
+.help-card {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--red);
+  border-top-width: 6px;
+}
+
+.help-card strong { display: block; font-size: 17px; }
+.help-card p { margin: 4px 0 0; }
+.help-card[data-state="closed"] { border-color: var(--rule-strong); }
+.help-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+
+.help-lead { margin: 0 0 10px; font-weight: 700; }
+
+.help-calls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+
+.call {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--paper);
+  color: var(--paper);
+  text-decoration: none;
+}
+
+.call strong {
+  font-size: 30px;
+  font-stretch: 112%;
+  font-weight: 300;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.call span {
+  color: var(--muted);
+  font-size: 12px;
+  font-stretch: 125%;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.field { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+
+.dialog textarea {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--paper);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+}
 
 /* ------------------------------------------------------------ faire signe */
 
 .pickup-card {
   padding: 14px;
-  border: 1px solid var(--blue);
-  border-radius: 14px;
-  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid var(--yellow);
 }
 
-.pickup-card strong { display: block; color: var(--blue); }
+.pickup-card strong { display: block; color: var(--yellow); }
 .pickup-card p { margin: 4px 0 0; }
 
 .dialog {
   width: min(420px, calc(100vw - 32px));
   padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--paper);
+  border-radius: 0;
+  background: var(--ink);
+  color: var(--paper);
 }
 
-.dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.dialog::backdrop { background: var(--scrim); }
 
-.dialog h3 { margin: 0 0 16px; font-size: 19px; }
+.dialog h3 { margin: 0 0 16px; font-size: 23px; font-stretch: 112%; font-weight: 300; }
 
 .dialog fieldset { margin: 0 0 16px; padding: 0; border: 0; }
 
@@ -327,60 +483,65 @@ h1 {
 .choice {
   min-height: 48px;
   padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-2);
-  font-weight: 650;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
 }
 
 .choice[aria-pressed="true"] {
-  border-color: var(--violet);
-  background: rgba(167, 139, 250, 0.14);
-  color: var(--violet);
+  border-color: var(--paper);
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .stepper { display: flex; align-items: center; gap: 18px; }
 
 .stepper button {
+  display: grid;
+  place-items: center;
   width: 48px;
   height: 48px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--surface-2);
-  font-size: 24px;
-  line-height: 1;
+  border: 1px solid var(--rule-strong);
+  background: transparent;
   cursor: pointer;
 }
+
+.stepper svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; }
 
 .stepper button:disabled { opacity: 0.35; cursor: default; }
 
 .stepper output {
   min-width: 2ch;
-  font-size: 28px;
-  font-weight: 800;
+  font-size: 30px;
+  font-stretch: 112%;
+  font-weight: 300;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
 .dialog-note { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
 .dialog-note:empty { display: none; }
-.dialog-error { margin: 0 0 10px; color: #fca5a5; font-weight: 650; }
+.dialog-error { margin: 0 0 10px; color: var(--yellow); font-weight: 650; }
 .dialog-error:empty { display: none; }
 
 .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
 .dialog-actions .btn { margin-top: 0; }
 
-.block { margin-top: 22px; }
+/* ------------------------------------------------------------ blocs */
+
+.block {
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
 
 h2 {
-  margin: 0 0 6px;
+  margin: 0 0 10px;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.1em;
 }
 
 /* ------------------------------------------------------------ arrêts */
@@ -392,7 +553,7 @@ h2 {
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--rule);
 }
 
 .eta:first-child { border-top: 0; }
@@ -401,14 +562,13 @@ h2 {
   flex: none;
   width: 12px;
   height: 12px;
-  border: 3px solid var(--violet);
-  border-radius: 50%;
+  border: 1px solid var(--c, var(--paper));
 }
 
-.eta.next .eta-dot { background: var(--violet); box-shadow: 0 0 10px var(--violet-glow); }
+.eta.next .eta-dot, .eta.here .eta-dot { background: var(--c, var(--paper)); }
 
 .eta-main { flex: 1; min-width: 0; }
-.eta-name { font-weight: 650; }
+.eta-name { font-weight: 600; }
 .eta-detail { color: var(--muted); font-size: 13px; }
 
 .eta-time {
@@ -417,9 +577,16 @@ h2 {
   white-space: nowrap;
 }
 
-.eta-time strong { display: block; font-size: 22px; line-height: 1.1; }
-.eta-time small { color: var(--muted); font-size: 12px; }
-.eta.here .eta-time strong { color: var(--violet); font-size: 16px; }
+.eta-time strong {
+  display: block;
+  font-size: 24px;
+  font-stretch: 112%;
+  font-weight: 300;
+  line-height: 1.1;
+}
+
+.eta-time small { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; }
+.eta.here .eta-time strong { color: var(--yellow); font-size: 17px; font-weight: 600; }
 .eta.unknown .eta-time strong { color: var(--grey); }
 
 .eta-near {
@@ -427,9 +594,8 @@ h2 {
   align-items: baseline;
   gap: 6px;
   margin-top: 3px;
-  color: var(--blue);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .eta-near::before {
@@ -438,23 +604,40 @@ h2 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--blue);
-  box-shadow: 0 0 8px var(--blue-glow);
+  background: var(--paper);
 }
 
-/* ------------------------------------------------------------ bon à savoir */
+/* ------------------------------------------------------------ fiche (catalogue) */
 
-.notice {
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface-2);
-  font-size: 14px;
+/* Clé / valeur en lignes réglées, comme la fiche technique d'une pochette. */
+.spec { margin: 0; }
+
+.spec div {
+  display: grid;
+  grid-template-columns: 124px 1fr;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
 }
 
+.spec div:first-child { border-top: 0; padding-top: 0; }
+
+.spec dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-stretch: 125%;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.7;
+  text-transform: uppercase;
+}
+
+.spec dd { margin: 0; font-weight: 600; }
+
+.notice { margin-top: 14px; font-size: 15px; }
 .notice p { margin: 0; }
-.notice p + p { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-.notice .scam { color: var(--amber); }
+.notice p + p { margin-top: 10px; color: var(--muted); }
+.notice .scam { color: var(--yellow); }
 
 /* ------------------------------------------------------------ trains */
 
@@ -465,25 +648,25 @@ h2 {
   align-items: center;
   gap: 12px;
   padding: 10px 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--rule);
 }
 
 .train:first-child { border-top: 0; }
 
 .train-time {
   flex: none;
-  width: 52px;
+  width: 54px;
   font-variant-numeric: tabular-nums;
 }
 
-.train-time strong { display: block; font-size: 16px; line-height: 1.2; }
-.train-time .late { color: var(--amber); font-size: 12px; font-weight: 700; }
+.train-time strong { display: block; font-size: 17px; font-weight: 600; line-height: 1.2; }
+.train-time .late { color: var(--yellow); font-size: 12px; font-weight: 700; }
 
 .train-main { flex: 1; min-width: 0; }
 
 .train-to {
   overflow: hidden;
-  font-weight: 650;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -497,23 +680,23 @@ h2 {
   font-size: 13px;
 }
 
-.train-meta .changed { color: var(--amber); font-weight: 700; }
+.train-meta .changed { color: var(--yellow); font-weight: 700; }
 
 .train-line {
   padding: 0 5px;
-  border-radius: 4px;
-  background: var(--surface-2);
-  color: var(--text);
+  border: 1px solid var(--rule-strong);
+  color: var(--paper);
   font-size: 11px;
   font-weight: 800;
-  line-height: 18px;
+  line-height: 17px;
   white-space: nowrap;
 }
 
 /* Grandes lignes en rouge, comme sur les panneaux CFF. */
 .train-line:is([data-cat="IC"], [data-cat="IR"], [data-cat="EC"], [data-cat="ICE"], [data-cat="TGV"], [data-cat="RJX"]) {
-  background: var(--sbb-red);
-  color: #fff;
+  border-color: var(--red);
+  background: var(--red);
+  color: var(--paper);
 }
 
 .train-in {
@@ -525,12 +708,10 @@ h2 {
   white-space: nowrap;
 }
 
-/* ------------------------------------------------------------ horaires */
+/* ------------------------------------------------------------ service */
 
 .schedule { margin: 0; padding: 0; list-style: none; }
-.schedule li { padding: 4px 0; font-variant-numeric: tabular-nums; }
-.info { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
-.info:empty { display: none; }
+.schedule li { font-variant-numeric: tabular-nums; }
 
 .sheet-footer {
   display: flex;
@@ -538,7 +719,7 @@ h2 {
   gap: 8px 18px;
   margin-top: 24px;
   padding-top: 14px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--rule);
   font-size: 13px;
   font-weight: 600;
 }
@@ -554,23 +735,33 @@ h2 {
   gap: 8px;
 }
 
-.map-actions button {
+.map-actions button, .locate {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 44px;
   padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(18, 16, 22, 0.92);
+  border: 1px solid var(--rule-strong);
+  background: var(--ink);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
-  backdrop-filter: blur(6px);
 }
 
 .map-actions button:disabled { opacity: 0.45; cursor: default; }
-.map-actions button[aria-pressed="true"] { border-color: var(--orange); color: var(--orange); }
+
+/* Actif : un bloc de couleur plein en bout de bouton, comme sur la pochette. */
+.map-actions button[aria-pressed="true"], .locate[aria-pressed="true"] { border-color: var(--paper); }
+
+.map-actions button[aria-pressed="true"]::after, .locate[aria-pressed="true"]::after {
+  content: "";
+  align-self: stretch;
+  width: 8px;
+  margin: -8px -14px -8px 4px;
+  background: var(--red);
+}
+
+.locate[aria-pressed="true"]::after { background: var(--paper); }
 
 .map-actions svg {
   width: 16px;
@@ -578,7 +769,7 @@ h2 {
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
-  stroke-linecap: round;
+  stroke-linecap: square;
 }
 
 /* Juste au-dessus du panneau sur mobile (--sheet-h tenu à jour en JS). */
@@ -587,23 +778,9 @@ h2 {
   right: 12px;
   bottom: calc(var(--sheet-h, 0px) + 12px);
   z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px 16px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(18, 16, 22, 0.94);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-  font-size: 14px;
-  font-weight: 650;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
 }
 
 .locate svg { width: 16px; height: 16px; fill: currentColor; }
-.locate[aria-pressed="true"] { border-color: var(--blue); color: var(--blue); }
 .locate[data-state="pending"] svg { animation: blink 1s ease-in-out infinite; }
 
 @media (min-width: 860px) {
@@ -613,71 +790,68 @@ h2 {
 
 .toast {
   position: absolute;
-  top: 64px;
+  top: 68px;
   left: 12px;
   right: 12px;
   z-index: 1001;
   max-width: 420px;
   margin: 0 auto;
   padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(18, 16, 22, 0.96);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  font-size: 14px;
+  border: 1px solid var(--paper);
+  background: var(--ink);
+  font-size: 15px;
   font-weight: 600;
 }
 
-.leaflet-container { font: inherit; background: #0d0c10; }
+.leaflet-container { font: inherit; background: var(--ink); }
 
 /* Crédits et zoom au-dessus du panneau sur mobile, comme « Me localiser ». */
 .leaflet-bottom { bottom: var(--sheet-h, 0px); }
 
-/* Carte swisstopo grise inversée → fond sombre légèrement violet. */
-.leaflet-tile-pane { filter: invert(1) hue-rotate(200deg) saturate(0.3) brightness(0.48) contrast(1.2); }
-.leaflet-bar a, .leaflet-bar a:hover { background: rgba(18, 16, 22, 0.92); color: var(--text); border-color: var(--line); }
-.leaflet-control-attribution { background: rgba(10, 10, 10, 0.75) !important; color: var(--muted); }
-.leaflet-control-attribution a { color: var(--violet); }
+/* Carte swisstopo grise, inversée en noir mat, sans teinte. */
+.leaflet-tile-pane { filter: grayscale(1) invert(1) brightness(0.3) contrast(0.95); }
+.leaflet-bar { border: 1px solid var(--rule-strong) !important; border-radius: 0 !important; }
+.leaflet-bar a, .leaflet-bar a:hover { border-radius: 0 !important; background: var(--ink); color: var(--paper); border-color: var(--rule) !important; }
+.leaflet-control-attribution { background: var(--veil) !important; color: var(--muted); }
+.leaflet-control-attribution a { color: var(--paper); }
 
 @media (max-width: 859px) {
   .leaflet-control-zoom { display: none; }
 }
 
+/* Arrêts : un carré à leur code couleur. */
 .stop-icon span {
   display: block;
-  width: 18px;
-  height: 18px;
-  border: 4px solid var(--violet);
-  border-radius: 50%;
-  background: var(--bg);
-  box-shadow: 0 0 14px var(--violet-glow);
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--ink);
+  outline: 1px solid var(--paper);
+  background: var(--c, var(--paper));
 }
 
 .leaflet-tooltip.stop-label {
-  padding: 3px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: rgba(10, 10, 10, 0.88);
-  color: var(--text);
+  padding: 3px 7px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  background: var(--ink);
+  color: var(--paper);
   box-shadow: none;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.1em;
 }
 
-.leaflet-tooltip.stop-label::before { border-right-color: var(--line); }
+.leaflet-tooltip.stop-label::before { display: none; }
 
-/* Là où j'ai fait signe : un losange, pour ne pas le confondre avec ma position. */
+/* Là où j'ai fait signe : un losange jaune. */
 .pickup-icon { background: none; border: 0; }
 
 .pickup-icon span {
   display: block;
-  width: 18px;
-  height: 18px;
-  margin: 2px;
-  border: 3px solid var(--bg);
-  border-radius: 4px;
-  background: var(--blue);
-  box-shadow: 0 0 16px var(--blue-glow);
+  width: 16px;
+  height: 16px;
+  margin: 3px;
+  border: 2px solid var(--ink);
+  background: var(--yellow);
   transform: rotate(45deg);
 }
 
@@ -686,33 +860,32 @@ h2 {
 
 .me-icon span {
   display: block;
-  width: 20px;
-  height: 20px;
-  border: 3px solid #fff;
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--ink);
   border-radius: 50%;
-  background: var(--blue);
-  box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.22), 0 0 18px var(--blue-glow);
+  outline: 2px solid var(--paper);
+  background: var(--paper);
 }
 
-/* Marqueur de la navette */
+/* Marqueur de la navette : un carré rouge, la flèche indique le sens. */
 .bus-icon { background: none; border: 0; }
 
 .bus { position: relative; width: 44px; height: 44px; }
 
 .bus-body {
   position: absolute;
-  inset: 6px;
+  inset: 9px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: var(--orange);
-  color: #1b0c00;
-  box-shadow: 0 0 0 3px var(--bg), 0 0 26px var(--orange-glow);
+  border: 2px solid var(--paper);
+  background: var(--red);
+  color: var(--paper);
 }
 
 .bus-body svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.2;
@@ -720,42 +893,27 @@ h2 {
   stroke-linejoin: round;
 }
 
-.bus.live .bus-body::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border: 2px solid var(--orange);
-  border-radius: 50%;
-  animation: pulse 2s ease-out infinite;
-}
-
 .bus-heading { position: absolute; inset: 0; transition: transform 0.6s ease; }
 
 .bus-heading::before {
   content: "";
   position: absolute;
-  top: -5px;
+  top: -1px;
   left: 50%;
   transform: translateX(-50%);
-  border: 7px solid transparent;
+  border: 6px solid transparent;
   border-top: 0;
-  border-bottom: 10px solid var(--orange);
+  border-bottom: 8px solid var(--paper);
 }
 
 .bus.no-heading .bus-heading { display: none; }
-.bus.dim .bus-body { background: var(--grey); box-shadow: 0 0 0 3px var(--bg); }
-.bus.dim .bus-heading::before { border-bottom-color: var(--grey); }
-
-@keyframes pulse {
-  from { transform: scale(0.9); opacity: 0.9; }
-  to { transform: scale(1.7); opacity: 0; }
-}
+.bus.dim .bus-body { background: var(--grey); }
 
 @keyframes blink {
   50% { opacity: 0.35; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bus.live .bus-body::after, .pill.live::before, .locate[data-state="pending"] svg { animation: none; }
+  .locate[data-state="pending"] svg, .trace.waiting .peak { animation: none; }
   .bus-heading, .sheet { transition: none; }
 }

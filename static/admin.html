@@ -3,78 +3,67 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#0b0b0a">
   <meta name="robots" content="noindex">
   <title>Navette · Orga</title>
+  <link rel="preload" href="/fonts/Norsebold.otf" as="font" type="font/otf" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.2.8/wdth.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="/crew.css">
-  <style>
-    :root {
-      --bg: #0a0a0a; --surface: #121016; --surface-2: #1c1923; --line: #2a2533; --text: #f1f5f9; --muted: #a39cb0;
-      --violet: #a78bfa; --orange: #ff7a1a; --green: #4ade80; --amber: #fbbf24; --red: #f87171;
-      color-scheme: dark;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0 auto; max-width: 640px; padding: 20px 16px 40px;
-      background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    }
-    header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-    /* Trois tailles seulement : 12 (étiquettes, notes), 15 (texte), 20 (valeurs). */
-    h1 { margin: 0; font-size: 15px; letter-spacing: .2em; text-transform: uppercase; color: var(--violet); }
-    h2 { margin: 28px 0 10px; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
-    a { color: var(--violet); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-    .card { padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
-    .card dt { color: var(--muted); font-size: 12px; }
-    .card dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .ok { color: var(--green); } .warn { color: var(--amber); } .err { color: var(--red); }
-    button, input { font: inherit; color: inherit; }
-    button {
-      min-height: 44px; padding: 8px 16px; border-radius: 12px; border: 1px solid var(--line);
-      background: var(--surface); font-weight: 700; cursor: pointer;
-    }
-    button.primary { background: var(--orange); color: #1b0c00; border-color: var(--orange); }
-    input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
-    .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-    .row > * { flex: 1; }
-    .ext { display: inline-flex; align-items: center; gap: 4px; }
-    .ext svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .note { color: var(--muted); font-size: 12px; }
-    [hidden] { display: none !important; }
-  </style>
 </head>
 <body>
-  <header>
-    <h1>Navette · Orga</h1>
-    <a class="ext" href="/" target="_blank" rel="noopener">Page publique
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>
+  <header class="crew-top">
+    <div class="crew-brand"><span class="wordmark">Ragnarok</span><span class="crew-role">Orga</span></div>
+    <a href="/" target="_blank" rel="noopener">Page publique
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></svg></a>
   </header>
 
   <form id="login" hidden>
     <h2>Connexion</h2>
-    <input id="token" type="password" autocomplete="off" placeholder="Jeton admin" required>
-    <div class="row"><button type="submit" class="primary">Entrer</button></div>
+    <input id="token" type="password" autocomplete="off" placeholder="Jeton admin" aria-label="Jeton admin" required>
+    <button type="submit" class="btn">Entrer</button>
   </form>
 
   <main id="panel" hidden>
-    <h2>En direct</h2>
-    <dl class="grid">
-      <div class="card"><dt>Statut public</dt><dd id="s-status">—</dd></div>
-      <div class="card"><dt>Dernière position</dt><dd id="s-age">—</dd></div>
-      <div class="card"><dt>Batterie téléphone</dt><dd id="s-batt">—</dd></div>
-      <div class="card"><dt>Précision GPS</dt><dd id="s-acc">—</dd></div>
-      <div class="card"><dt>Vitesse</dt><dd id="s-speed">—</dd></div>
-      <div class="card"><dt>Spectateurs connectés</dt><dd id="s-viewers">—</dd></div>
-    </dl>
-    <p class="note" id="s-next"></p>
+    <section>
+      <h2>En direct</h2>
+      <dl class="spec">
+        <div><dt>Statut public</dt><dd id="s-status">—</dd></div>
+        <div><dt>Dernière position</dt><dd id="s-age">—</dd></div>
+        <div><dt>Batterie</dt><dd id="s-batt">—</dd></div>
+        <div><dt>Précision</dt><dd id="s-acc">—</dd></div>
+        <div><dt>Vitesse</dt><dd id="s-speed">—</dd></div>
+        <div><dt>Spectateurs</dt><dd id="s-viewers">—</dd></div>
+      </dl>
+      <p class="note" id="s-next"></p>
+    </section>
 
-    <h2>Navette</h2>
-    <div id="crew"></div>
+    <section class="block">
+      <h2>Navette</h2>
+      <div id="crew"></div>
+    </section>
 
-    <div class="row" style="margin-top:32px"><button type="button" id="logout">Se déconnecter</button></div>
+    <section class="block" id="route-editor">
+      <h2>Trajet</h2>
+      <p class="note">Route bloquée ? Les points blancs sont les points de passage, numérotés dans l'ordre. Glisse un point pour le déplacer, touche la carte pour en ajouter un, touche un point pour le retirer. « Calculer » montre le nouveau trajet (en pointillé) ; « Appliquer » le publie pour tout le monde.</p>
+      <div class="route-map" id="route-map" role="region" aria-label="Éditeur du trajet"></div>
+      <p class="route-status" id="route-status" aria-live="polite"></p>
+      <div class="route-tools">
+        <button type="button" class="btn ghost" id="route-preview">Calculer</button>
+        <button type="button" class="btn" id="route-apply" disabled>Appliquer</button>
+        <button type="button" class="btn ghost" id="route-undo">Annuler les changements</button>
+        <button type="button" class="btn ghost" id="route-reset">Trajet d'origine</button>
+      </div>
+    </section>
+
+    <div class="center" style="margin-top:32px"><button type="button" class="link" id="logout">Se déconnecter</button></div>
   </main>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/crew.js"></script>
+  <script src="/route-editor.js"></script>
   <script>
     'use strict';
     const $ = (id) => document.getElementById(id);
@@ -85,6 +74,7 @@
     };
     let token = localStorage.getItem(KEY);
     let crew = null;
+    let routeEditor = null;
 
     // Les commandes de l'équipage interrogent le serveur toutes les 3 s ;
     // le reste de la page se met à jour avec le même état.
@@ -93,6 +83,7 @@
       $('panel').hidden = !token;
       if (token && !crew) {
         crew = mountCrew($('crew'), { getToken: () => token, onState: render, onUnauthorized: logout });
+        routeEditor ??= mountRouteEditor({ getToken: () => token, onUnauthorized: logout });
       } else if (!token && crew) {
         crew.stop();
         crew = null;

@@ -1,6 +1,7 @@
 mod api;
 mod config;
 mod geo;
+mod routing;
 mod sim;
 mod state;
 mod tracker;

@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::Duration;
 
 use serde_json::json;
@@ -9,8 +9,10 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::geo::Route;
+use crate::routing::CustomRoute;
 use crate::tracker::{
-    Created, Fix, Ingest, Message, Persisted, PickupAction, PickupRequest, ServiceMode, Tracker,
+    AlertAction, AlertCreated, AlertRequest, AlertState, Created, Fix, Ingest, Message, Persisted, PickupAction,
+    PickupRequest, ServiceMode, Tracker,
 };
 use crate::trains::Trains;
 
@@ -18,20 +20,55 @@ pub fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+fn custom_route_path(cfg: &Config) -> std::path::PathBuf {
+    cfg.server.data_dir.join("route.json")
+}
+
+fn build_config_json(cfg: &Config, route: &Route, version: i64, custom: bool) -> Arc<str> {
+    json!({
+        "event": cfg.event,
+        "stops": cfg.stops,
+        "route": route.coords().iter().map(|c| [c.lat, c.lon]).collect::<Vec<_>>(),
+        "route_length_m": route.length.round(),
+        "route_version": version,
+        "route_custom": custom,
+        "stale_after_s": cfg.tracking.stale_after_s,
+        "capacity": cfg.shuttle.capacity,
+        "pickups": cfg.pickups.enabled.then(|| json!({
+            "max_group": cfg.pickups.max_group,
+            "min_stop_distance_m": cfg.pickups.min_stop_distance_m,
+            "max_distance_m": cfg.pickups.max_distance_m,
+        })),
+        "trains":cfg.trains.enabled.then(|| json!({ "station": cfg.trains.station_name })),
+    })
+    .to_string()
+    .into()
+}
+
 #[derive(Clone)]
 pub struct AppState(Arc<Inner>);
 
 pub struct Inner {
     pub cfg: Config,
-    pub route: Arc<Route>,
+    /// Le tracé courant : celui de `route.geojson`, ou celui modifié par l'orga.
+    route: RwLock<RouteNow>,
     tracker: Mutex<Tracker>,
     /// Dernier état sérialisé : sérialisé une seule fois, partagé par tous les clients SSE.
     pub tx: watch::Sender<Arc<str>>,
     pub viewers: AtomicUsize,
-    /// Réponse de `/api/config`, calculée au démarrage.
-    pub config_json: String,
     /// Prochains départs de la gare (`None` si désactivé).
     pub trains: Option<Trains>,
+    /// Longueur du tracé d'origine (`route.geojson`), pour juger un détour.
+    pub original_route_m: f64,
+}
+
+struct RouteNow {
+    route: Arc<Route>,
+    /// Points de passage de l'aller, et s'ils viennent de l'orga (sinon de la config).
+    via: Vec<[f64; 2]>,
+    custom: bool,
+    /// Réponse de `/api/config`, recalculée à chaque changement de tracé.
+    config_json: Arc<str>,
 }
 
 impl Deref for AppState {
@@ -49,7 +86,22 @@ impl AppState {
             .and_then(|raw| serde_json::from_str::<Persisted>(&raw).ok())
             .unwrap_or_default();
 
-        let tracker = Tracker::new(
+        // Un tracé modifié par l'orga passe avant celui de l'image.
+        let original_route_m = route.length;
+        let (route, via, custom) = match CustomRoute::load(&custom_route_path(&cfg)).map(|c| (c.route(), c.via)) {
+            Some((Ok(r), via)) => {
+                info!("tracé modifié par l'orga : {:.0} m", r.length);
+                (Arc::new(r), via, true)
+            }
+            Some((Err(e), _)) => {
+                warn!("tracé modifié illisible, on garde l'original : {e}");
+                (route, cfg.route_editor.via.clone(), false)
+            }
+            None => (route, cfg.route_editor.via.clone(), false),
+        };
+
+        let version = now_ms();
+        let mut tracker = Tracker::new(
             route.clone(),
             &cfg.stops,
             cfg.tracking.clone(),
@@ -57,26 +109,12 @@ impl AppState {
             cfg.pickups.clone(),
             persisted,
         );
+        tracker.route_version = version;
         for (id, s) in tracker.stop_positions() {
             info!("arrêt {id} à {s:.0} m du départ du tracé");
         }
 
-        let config_json = json!({
-            "event": cfg.event,
-            "stops": cfg.stops,
-            "route": route.coords().iter().map(|c| [c.lat, c.lon]).collect::<Vec<_>>(),
-            "route_length_m": route.length.round(),
-            "stale_after_s": cfg.tracking.stale_after_s,
-            "capacity": cfg.shuttle.capacity,
-            "pickups": cfg.pickups.enabled.then(|| json!({
-                "max_group": cfg.pickups.max_group,
-                "min_stop_distance_m": cfg.pickups.min_stop_distance_m,
-                "max_distance_m": cfg.pickups.max_distance_m,
-            })),
-            "trains":cfg.trains.enabled.then(|| json!({ "station": cfg.trains.station_name })),
-        })
-        .to_string();
-
+        let config_json = build_config_json(&cfg, &route, version, custom);
         let initial = serde_json::to_string(&tracker.snapshot(now_ms()))?;
         let (tx, _) = watch::channel(Arc::from(initial));
         let trains = cfg
@@ -87,17 +125,71 @@ impl AppState {
 
         Ok(Self(Arc::new(Inner {
             cfg,
-            route,
+            route: RwLock::new(RouteNow {
+                route,
+                via,
+                custom,
+                config_json,
+            }),
             tracker: Mutex::new(tracker),
             tx,
             viewers: AtomicUsize::new(0),
-            config_json,
             trains,
+            original_route_m,
         })))
     }
 
     pub fn tracker(&self) -> MutexGuard<'_, Tracker> {
         self.tracker.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn route(&self) -> Arc<Route> {
+        self.route.read().unwrap_or_else(|e| e.into_inner()).route.clone()
+    }
+
+    pub fn config_json(&self) -> Arc<str> {
+        self.route.read().unwrap_or_else(|e| e.into_inner()).config_json.clone()
+    }
+
+    /// Points de passage courants, ceux de la config, et si le tracé a été modifié.
+    pub fn route_editor_state(&self) -> serde_json::Value {
+        let now = self.route.read().unwrap_or_else(|e| e.into_inner());
+        json!({
+            "via": now.via,
+            "default_via": self.cfg.route_editor.via,
+            "custom": now.custom,
+            "length_m": now.route.length.round(),
+        })
+    }
+
+    /// Remplace le tracé pour tout le monde. `custom: None` revient à l'original.
+    pub fn set_route(&self, route: Route, custom: Option<CustomRoute>) -> anyhow::Result<()> {
+        let path = custom_route_path(&self.cfg);
+        let via = match &custom {
+            Some(c) => {
+                c.save(&path)?;
+                c.via.clone()
+            }
+            None => {
+                if path.exists() {
+                    std::fs::remove_file(&path)?;
+                }
+                self.cfg.route_editor.via.clone()
+            }
+        };
+        let route = Arc::new(route);
+        let version = now_ms();
+        let mut t = self.tracker();
+        t.set_route(route.clone(), version);
+        *self.route.write().unwrap_or_else(|e| e.into_inner()) = RouteNow {
+            config_json: build_config_json(&self.cfg, &route, version, custom.is_some()),
+            route: route.clone(),
+            via,
+            custom: custom.is_some(),
+        };
+        self.publish(&mut t);
+        info!("nouveau tracé : {:.0} m{}", route.length, if custom.is_some() { "" } else { " (original)" });
+        Ok(())
     }
 
     fn publish(&self, t: &mut Tracker) {
@@ -180,6 +272,30 @@ impl AppState {
         done
     }
 
+    // Les alertes ne sont pas diffusées au public : rien à publier, l'équipage
+    // les reçoit par /api/crew/state. On ne journalise jamais la position.
+    pub fn request_alert(&self, req: AlertRequest) -> Result<AlertCreated, String> {
+        let created = self.tracker().request_alert(req, now_ms())?;
+        warn!("demande d'aide {}", created.id);
+        Ok(created)
+    }
+
+    pub fn alert_state(&self, id: &str, token: &str) -> Option<AlertState> {
+        self.tracker().alert_state(id, token)
+    }
+
+    pub fn cancel_alert(&self, id: &str, token: &str) -> bool {
+        self.tracker().cancel_alert(id, token, now_ms())
+    }
+
+    pub fn resolve_alert(&self, id: &str, action: AlertAction) -> bool {
+        let done = self.tracker().resolve_alert(id, action, now_ms());
+        if done {
+            info!("demande d'aide {id} : {action:?}");
+        }
+        done
+    }
+
     fn persist(&self, t: &Tracker) {
         let path = self.cfg.server.data_dir.join("state.json");
         let res = serde_json::to_vec_pretty(&t.persisted())
@@ -199,6 +315,7 @@ impl AppState {
             tick.tick().await;
             let now = now_ms();
             let mut t = self.tracker();
+            t.expire_alerts(now);
             let pickups_changed = t.expire_pickups(now);
             if pickups_changed || t.published_status != Some(t.status(now)) {
                 self.publish(&mut t);

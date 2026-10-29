@@ -18,6 +18,15 @@ const LIVE = new Set(['moving', 'at_stop', 'departing']);
 
 const PICKUP_KEY = 'navette-pickup';
 const DEVICE_KEY = 'navette-device';
+const HELP_KEY = 'navette-help';
+const HELP_POLL_MS = 5000;
+const HELP_KEEP_MS = 2 * 60 * 60_000;
+
+const HELP_TEXT = {
+  open: ['Alerte envoyée à l’équipe', 'Le chauffeur et l’orga ont ta position. Reste dans un endroit éclairé, avec du monde. Si personne ne répond vite, appelle le 117.'],
+  seen: ['L’équipe a vu ton alerte', 'Quelqu’un essaie de venir. Si ça presse, appelle le 117.'],
+  closed: ['Alerte close', 'L’équipe a clos ton alerte. Si tu as encore besoin d’aide, appelle le 117 ou renvoie une alerte.'],
+};
 
 const PICKUP_OUTCOMES = {
   picked: 'Le chauffeur t’a pris en charge. Bon trajet !',
@@ -28,6 +37,9 @@ const PICKUP_OUTCOMES = {
 };
 
 const BUS_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6v6M15 6v6M2 12h19.6M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/></svg>';
+
+/** Code couleur des arrêts, dans l'ordre de la config : bleu gare, jaune Usine. */
+const STOP_CODES = ['var(--blue)', 'var(--yellow)', 'var(--red)', 'var(--paper)'];
 
 const REFRESH_MS = 30_000;
 const TRAINS_REFRESH_MS = 60_000;
@@ -61,11 +73,14 @@ const app = {
   es: null,
   trains: null,
   trainsKey: '',
+  trace: null, // { legs, shown: { leg, f }, anim }
   locate: { on: false, watch: null, me: null, framed: false, layers: null },
   pickup: null, // ma demande « faire signe » : { id, token, lat, lon, count, dest }
   pickupMarker: null,
   pickupCount: 1,
   pickupDest: null,
+  help: null, // mon alerte « demander de l'aide » : { id, token, created, state }
+  helpTimer: 0,
 };
 
 const serverNow = () => Date.now() + app.clockOffset;
@@ -101,6 +116,11 @@ function el(tag, cls, text) {
   return e;
 }
 
+function stopCode(id) {
+  const i = app.cfg.stops.findIndex((s) => s.id === id);
+  return i < 0 ? 'var(--paper)' : STOP_CODES[i % STOP_CODES.length];
+}
+
 async function fetchJson(url) {
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`${url} : ${res.status}`);
@@ -134,14 +154,19 @@ function setupMap(cfg) {
     attribution: '&copy; <a href="https://www.swisstopo.admin.ch/">swisstopo</a>',
   }).addTo(map);
 
-  const line = { lineCap: 'round', lineJoin: 'round', interactive: false };
-  L.polyline(cfg.route, { ...line, color: '#7c3aed', weight: 12, opacity: 0.28 }).addTo(map);
-  const route = L.polyline(cfg.route, { ...line, color: '#c4b5fd', weight: 4, opacity: 0.95 }).addTo(map);
+  // Un filet blanc, sur un liseré noir pour rester lisible sur le fond de carte.
+  const line = { lineCap: 'square', lineJoin: 'miter', interactive: false };
+  L.polyline(cfg.route, { ...line, color: '#0b0b0a', weight: 9, opacity: 0.9 }).addTo(map);
+  const route = L.polyline(cfg.route, { ...line, color: '#f2f1ec', weight: 3.5, opacity: 1 }).addTo(map);
   app.routeBounds = route.getBounds();
+
+  // Noms des arrêts sous les marqueurs : la navette passe toujours devant.
+  map.createPane('stop-labels').style.zIndex = 590;
 
   for (const stop of cfg.stops) {
     L.marker([stop.lat, stop.lon], {
-      icon: L.divIcon({ className: 'stop-icon', html: '<span></span>', iconSize: [18, 18] }),
+      // Étiquette décalée de la largeur de la navette : à quai, elle ne la coupe pas.
+      icon: L.divIcon({ className: 'stop-icon', html: `<span style="--c: ${stopCode(stop.id)}"></span>`, iconSize: [18, 18], tooltipAnchor: [20, 0] }),
       keyboard: false,
       title: stop.name,
     })
@@ -151,11 +176,16 @@ function setupMap(cfg) {
         direction: 'auto',
         offset: [0, 0],
         className: 'stop-label',
+        pane: 'stop-labels',
       })
       .addTo(map);
   }
 
   fitRoute();
+
+  // Les étiquettes sont placées avec la police de secours ; une fois Archivo
+  // chargée (plus large), on les replace pour qu'elles ne passent pas sous un marqueur.
+  document.fonts?.ready.then(() => map.eachLayer((layer) => layer.getTooltip?.()?.update()));
 
   // Tant que l'utilisateur n'a pas touché la carte, on garde tout le trajet
   // cadré (rotation du téléphone, panneau réduit, fenêtre redimensionnée…).
@@ -276,7 +306,8 @@ function animateBus(to) {
 function renderStatic(cfg) {
   const schedule = $('schedule');
   for (const line of cfg.event.schedule) schedule.append(el('li', null, line));
-  $('info').textContent = cfg.event.info || '';
+  if (cfg.event.name) $('event-name').textContent = cfg.event.name;
+  if (cfg.capacity) $('spec-seats').textContent = String(cfg.capacity);
   if (cfg.event.tickets_url) {
     $('tickets').href = cfg.event.tickets_url;
     $('tickets').hidden = false;
@@ -293,9 +324,10 @@ function effectiveStatus(snap) {
 }
 
 function renderStatus(snap, status) {
+  // Le carré porte la couleur de l'état ; le titre, lui, le nomme toujours.
   const info = STATUS[status] || STATUS.offline;
   const pill = $('status-pill');
-  pill.textContent = info.pill;
+  pill.title = info.pill;
   pill.className = `pill ${info.cls}`;
 
   const stopName = (id) => app.stops.get(id)?.name ?? '';
@@ -306,9 +338,9 @@ function renderStatus(snap, status) {
     case 'moving': {
       title = next ? `En route vers ${stopName(next.stop)}` : 'En route';
       const dep = snap.departure;
-      const left = dep?.stop && serverNow() - dep.ts < 30 * 60_000 ? `Partie de ${stopName(dep.stop)} à ${TIME_FMT.format(dep.ts)}. ` : '';
+      const left = dep?.stop && serverNow() - dep.ts < 30 * 60_000 ? `Partie de ${stopName(dep.stop)} à ${TIME_FMT.format(dep.ts)}.` : '';
       if (snap.bus && !snap.bus.on_route) sub = 'Déviation : la navette a quitté le trajet habituel.';
-      else if (next) sub = `${left}Arrivée estimée dans ${fmtMinutes(next.eta_s)}.`;
+      else sub = left;
       break;
     }
     case 'at_stop':
@@ -318,7 +350,7 @@ function renderStatus(snap, status) {
       break;
     case 'departing':
       title = `Départ de ${stopName(snap.at_stop)}`;
-      sub = next ? `La navette s’en va. Arrivée à ${stopName(next.stop)} dans ${fmtMinutes(next.eta_s)}.` : 'La navette s’en va.';
+      sub = next ? `La navette s’en va vers ${stopName(next.stop)}.` : 'La navette s’en va.';
       break;
     case 'stale':
       title = 'Signal perdu';
@@ -338,6 +370,15 @@ function renderStatus(snap, status) {
   }
   if ($('status-title').textContent !== title) $('status-title').textContent = title;
   $('status-sub').textContent = sub;
+
+  // Le temps d'arrivée, en grand : c'est ce qu'on vient chercher.
+  const eta = $('status-eta');
+  const showEta = (status === 'moving' || status === 'departing') && next && snap.bus?.on_route !== false;
+  eta.hidden = !showEta;
+  if (showEta) {
+    eta.replaceChildren(el('strong', null, next.eta_s < 60 ? '<1' : String(Math.round(next.eta_s / 60))), el('span', null, 'min'));
+    eta.setAttribute('aria-label', `Arrivée dans ${fmtMinutes(next.eta_s)}`);
+  }
   renderSeats(snap, status);
 }
 
@@ -391,9 +432,132 @@ function renderEtas(snap, status) {
       time.append(el('strong', null, fmtMinutes(eta.eta_s)), el('small', null, fmtDistance(eta.distance_m)));
     }
 
-    li.append(el('span', 'eta-dot'), main, time);
+    const dot = el('span', 'eta-dot');
+    dot.style.setProperty('--c', stopCode(stop.id));
+    li.append(dot, main, time);
     list.append(li);
   }
+}
+
+// ------------------------------------------------------------------ tracé
+
+// Une ligne par trajet entre deux arrêts ; la navette y fait une bosse à sa
+// position. Le serveur donne la distance restante jusqu'au prochain arrêt :
+// c'est elle qui place la bosse, sans recalcul géographique ici.
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const LEG_H = 46;
+
+function setupTrace(cfg) {
+  const pts = cfg.route.map(([lat, lon]) => L.latLng(lat, lon));
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i - 1].distanceTo(pts[i]));
+  const length = cum[cum.length - 1] + pts[pts.length - 1].distanceTo(pts[0]);
+  const at = (stop) => {
+    let best = 0;
+    pts.forEach((p, i) => {
+      if (p.distanceTo([stop.lat, stop.lon]) < pts[best].distanceTo([stop.lat, stop.lon])) best = i;
+    });
+    return cum[best];
+  };
+  const stops = cfg.stops.map((stop) => ({ stop, s: at(stop) })).sort((a, b) => a.s - b.s);
+  if (stops.length < 2) return;
+
+  const box = $('trace');
+  const legs = stops.map((from, i) => {
+    const to = stops[(i + 1) % stops.length];
+    const legLength = (to.s - from.s + length) % length || length;
+    const node = el('div', 'leg');
+    const name = el('div', 'leg-name');
+    name.append(el('span', null, `Vers ${to.stop.name}`), el('span', null, fmtDistance(legLength)));
+    const line = el('div', 'leg-line');
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('aria-hidden', 'true');
+    const peak = document.createElementNS(SVG_NS, 'g');
+    peak.setAttribute('class', 'peak');
+    const path = document.createElementNS(SVG_NS, 'path');
+    peak.append(path);
+    const mark = document.createElementNS(SVG_NS, 'rect');
+    mark.setAttribute('class', 'peak-mark');
+    mark.setAttribute('width', 8);
+    mark.setAttribute('height', 8);
+    svg.append(peak, mark);
+    const end = (stop) => {
+      const i = el('i', 'leg-end');
+      i.style.setProperty('--c', stopCode(stop.id));
+      return i;
+    };
+    line.append(end(from.stop), svg, end(to.stop));
+    node.append(name, line);
+    box.append(node);
+    return { to: to.stop, length: legLength, node, svg, path, mark };
+  });
+
+  app.trace = { legs, shown: { leg: -1, f: 0 }, anim: 0 };
+  new ResizeObserver(() => drawTrace()).observe(box);
+}
+
+function drawTrace() {
+  const t = app.trace;
+  t.legs.forEach((leg, i) => {
+    const w = leg.svg.clientWidth;
+    if (!w) return;
+    const base = LEG_H - 1;
+    const active = i === t.shown.leg;
+    leg.node.classList.toggle('active', active);
+    leg.mark.style.display = active ? '' : 'none';
+    if (!active) {
+      leg.path.setAttribute('d', `M0 ${base}H${w}`);
+      return;
+    }
+    // Une gaussienne : une bosse nette, comme une impulsion sur un tracé.
+    // Près d'un arrêt, elle déborde sur son carré plutôt que d'être coupée.
+    const x0 = t.shown.f * w;
+    const sigma = Math.max(9, w * 0.035);
+    const from = Math.min(0, Math.floor(x0 - 3 * sigma));
+    const to = Math.max(w, Math.ceil(x0 + 3 * sigma));
+    let d = `M${from} ${base}`;
+    for (let x = from; x <= to; x += 2) {
+      const y = base - (LEG_H - 10) * Math.exp(-((x - x0) ** 2) / (2 * sigma * sigma));
+      d += `L${x} ${y.toFixed(1)}`;
+    }
+    leg.path.setAttribute('d', d);
+    leg.mark.setAttribute('x', (x0 - 4).toFixed(1));
+    leg.mark.setAttribute('y', base - 4);
+  });
+}
+
+function renderTrace(snap, status) {
+  const t = app.trace;
+  if (!t) return;
+  const box = $('trace');
+  const next = LIVE.has(status) || status === 'stale' ? snap.etas.find((e) => e.stop === snap.next_stop) : null;
+  const leg = next ? t.legs.findIndex((l) => l.to.id === next.stop) : -1;
+  const f = leg >= 0 ? Math.max(0, Math.min(1, 1 - (next.distance_m ?? 0) / t.legs[leg].length)) : 0;
+  box.classList.toggle('dim', status === 'stale');
+  box.classList.toggle('waiting', status === 'at_stop');
+  box.setAttribute(
+    'aria-label',
+    leg >= 0 ? `Navette à ${Math.round(f * 100)} % du trajet vers ${t.legs[leg].to.name}` : 'Navette pas en circulation',
+  );
+
+  // Sur le même trajet, la bosse glisse jusqu'à la nouvelle position.
+  cancelAnimationFrame(t.anim);
+  const from = t.shown;
+  if (leg !== from.leg || document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    t.shown = { leg, f };
+    drawTrace();
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const k = Math.min(1, (now - start) / 1500);
+    const ease = 1 - (1 - k) ** 3;
+    t.shown = { leg, f: from.f + (f - from.f) * ease };
+    drawTrace();
+    if (k < 1) t.anim = requestAnimationFrame(step);
+  };
+  t.anim = requestAnimationFrame(step);
 }
 
 function renderBanner(message) {
@@ -559,12 +723,12 @@ function drawMe() {
   const near = nearestStop(me);
   const pos = [me.lat, me.lon];
   const stopPos = [near.stop.lat, near.stop.lon];
-  const blue = '#38bdf8';
+  const ink = '#f2f1ec';
   let layers = app.locate.layers;
   if (!layers) {
     layers = app.locate.layers = {
-      line: L.polyline([pos, stopPos], { color: blue, weight: 3, opacity: 0.9, dashArray: '1 8', lineCap: 'round', interactive: false }),
-      circle: L.circle(pos, { radius: me.acc, color: blue, weight: 1, opacity: 0.4, fillOpacity: 0.08, interactive: false }),
+      line: L.polyline([pos, stopPos], { color: ink, weight: 2, opacity: 0.9, dashArray: '2 7', lineCap: 'square', interactive: false }),
+      circle: L.circle(pos, { radius: me.acc, color: ink, weight: 1, opacity: 0.4, fillOpacity: 0.06, interactive: false }),
       marker: L.marker(pos, {
         icon: L.divIcon({ className: 'me-icon', html: '<span></span>', iconSize: [20, 20] }),
         zIndexOffset: 500,
@@ -818,14 +982,147 @@ function setupPickups() {
   $('pickup-form').addEventListener('submit', sendPickup);
 }
 
+// ------------------------------------------------------------------ demander de l'aide
+
+// Pour quelqu'un en danger près du trajet : la position exacte part à
+// l'équipage seulement (jamais dans le flux public). La page renvoie d'abord
+// aux secours ; l'équipe vient en plus, pas à la place.
+
+function saveHelp(h) {
+  app.help = h;
+  try {
+    if (h) localStorage.setItem(HELP_KEY, JSON.stringify(h));
+    else localStorage.removeItem(HELP_KEY);
+  } catch {
+    // Sans stockage, l'alerte n'est simplement plus suivie au rechargement.
+  }
+  renderHelp();
+}
+
+function renderHelp() {
+  const h = app.help;
+  $('help-active').hidden = !h;
+  clearTimeout(app.helpTimer);
+  if (!h) return;
+  const [title, sub] = HELP_TEXT[h.state] ?? HELP_TEXT.open;
+  $('help-title').textContent = title;
+  $('help-sub').textContent = sub;
+  $('help-active').dataset.state = h.state;
+  $('btn-help-cancel').textContent = h.state === 'closed' ? 'OK' : 'Annuler l’alerte';
+  if (h.state !== 'closed') app.helpTimer = setTimeout(pollHelp, HELP_POLL_MS);
+}
+
+async function pollHelp() {
+  const h = app.help;
+  if (!h || h.state === 'closed') return;
+  if (document.hidden) {
+    renderHelp(); // on réessaie au prochain tour
+    return;
+  }
+  try {
+    const res = await fetch('/api/help/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: h.id, token: h.token }),
+    });
+    // Inconnue du serveur (expirée, ou serveur redémarré) : on la considère close.
+    const state = res.status === 404 ? 'closed' : res.ok ? (await res.json()).state : h.state;
+    if (app.help?.id === h.id) saveHelp({ ...h, state });
+  } catch {
+    renderHelp();
+  }
+}
+
+function openHelpDialog() {
+  $('help-error').textContent = '';
+  $('help-dialog').showModal();
+}
+
+async function sendHelp(event) {
+  event.preventDefault();
+  const error = $('help-error');
+  if (!('geolocation' in navigator) || !window.isSecureContext) {
+    error.textContent = 'Localisation indisponible sur cette page : appelle le 117.';
+    return;
+  }
+  const btn = $('help-send');
+  btn.disabled = true;
+  btn.textContent = 'Localisation…';
+  error.textContent = '';
+  try {
+    const me = await currentPosition();
+    btn.textContent = 'Envoi…';
+    const res = await fetch('/api/help', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: me.lat, lon: me.lon, accuracy: me.acc, note: $('help-note').value, device: deviceId() }),
+    });
+    if (res.status !== 201) {
+      const body = await res.json().catch(() => null);
+      error.textContent = body?.error ?? 'L’alerte n’est pas partie : appelle le 117.';
+      return;
+    }
+    const c = await res.json();
+    $('help-dialog').close();
+    $('help-note').value = '';
+    saveHelp({ id: c.id, token: c.token, created: Date.now(), state: 'open' });
+    // Panneau ouvert et remonté : la personne voit tout de suite que c'est parti.
+    $('sheet').classList.remove('collapsed');
+    $('sheet').scrollTop = 0;
+  } catch (err) {
+    error.textContent = err?.code
+      ? 'Sans ta position, l’équipe ne peut pas te trouver : autorise la localisation, ou appelle le 117.'
+      : 'Pas de réseau : appelle le 117.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Prévenir l’équipe';
+  }
+}
+
+async function cancelHelp() {
+  const h = app.help;
+  if (h && h.state !== 'closed') {
+    await fetch('/api/help/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: h.id, token: h.token }),
+    }).catch(() => {});
+  }
+  saveHelp(null);
+}
+
+function setupHelp() {
+  try {
+    const h = JSON.parse(localStorage.getItem(HELP_KEY));
+    if (h && Date.now() - h.created < HELP_KEEP_MS) app.help = h;
+  } catch {
+    // Rien à reprendre.
+  }
+  renderHelp();
+  $('btn-help').addEventListener('click', openHelpDialog);
+  $('help-close').addEventListener('click', () => $('help-dialog').close());
+  $('help-form').addEventListener('submit', sendHelp);
+  $('btn-help-cancel').addEventListener('click', cancelHelp);
+}
+
 // ------------------------------------------------------------------ rendu
 
 function render(snap) {
+  // L'orga a changé le tracé (ou le serveur a redémarré) : on recharge la page
+  // pour tout redessiner avec la nouvelle config.
+  if (snap.route_version && app.cfg.route_version && snap.route_version !== app.cfg.route_version) {
+    if (!app.reloading) {
+      app.reloading = true;
+      location.reload();
+    }
+    return;
+  }
   app.snap = snap;
   const status = effectiveStatus(snap);
   tick.lastStatus = status;
   renderBanner(snap.message);
   renderStatus(snap, status);
+  renderTrace(snap, status);
   renderEtas(snap, status);
   renderBus(snap, status);
   renderPickup(snap, status);
@@ -841,6 +1138,7 @@ function tick() {
   if (status !== tick.lastStatus) {
     tick.lastStatus = status;
     renderStatus(snap, status);
+    renderTrace(snap, status);
     renderEtas(snap, status);
     renderBus(snap, status);
     renderPickup(snap, status);
@@ -905,16 +1203,20 @@ document.addEventListener('visibilitychange', () => {
   } else {
     refresh();
     connect();
+    if (app.help) pollHelp();
     if (app.cfg?.trains) refreshTrains();
     if (app.locate.on) watchLocation();
   }
 });
 
 async function init() {
+  // Avant tout le reste : les numéros d'urgence s'affichent même sans serveur.
+  setupHelp();
   app.cfg = await fetchJsonRetry('/api/config');
   for (const stop of app.cfg.stops) app.stops.set(stop.id, stop);
   renderStatic(app.cfg);
   setupMap(app.cfg);
+  setupTrace(app.cfg);
   setupPickups();
 
   $('btn-bus').addEventListener('click', () => setFollow(!app.follow));

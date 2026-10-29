@@ -15,12 +15,10 @@ const STEP_S: u64 = 2;
 const DWELL_STEPS: u32 = 20;
 
 pub async fn run(state: AppState) {
-    let route = state.route.clone();
-    let stops: Vec<f64> = state.tracker().stop_positions().map(|(_, s)| s).collect();
     let capacity = state.cfg.shuttle.capacity;
     info!("simulation : navette fictive à {:.0} km/h", SPEED_MPS * 3.6);
 
-    let mut s = stops.first().copied().unwrap_or(0.0);
+    let mut s = state.tracker().stop_positions().next().map_or(0.0, |(_, s)| s);
     let mut wait = DWELL_STEPS;
     let mut aboard = 0;
     let mut rng = Lcg(0x5eed_cafe);
@@ -29,6 +27,10 @@ pub async fn run(state: AppState) {
 
     loop {
         tick.tick().await;
+        // Relu à chaque pas : l'orga peut changer le tracé en cours de route.
+        let route = state.route();
+        let stops: Vec<f64> = state.tracker().stop_positions().map(|(_, s)| s).collect();
+        s = s.min(route.length);
         if wait > 0 {
             // Des festivaliers montent ; départ dès que c'est plein, ou au bout de l'attente.
             wait -= 1;

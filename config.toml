@@ -39,12 +39,15 @@ max_active = 12            # demandes simultanées max (anti-abus)
 [event]
 name = "Ragnarok Festival 2026 · Halloween Édition"
 info = "Navette gratuite de 16 places entre la gare de Sion et l'Usine de Chandoline. Pas d'horaire fixe : elle part dès qu'elle est pleine, ou quand le chauffeur décide."
-# TODO : heures de service réelles de la navette.
+# Heures de service, affichées telles quelles (une ligne par élément). Les
+# deux nuits : 21:00 → 01:30, pause, puis 04:20 → 06:30.
 schedule = [
-  "Ven 30.10 · 21:00 → 05:00",
-  "Sam 31.10 · 21:00 → 05:00",
+  "Ven 30.10 et sam 31.10",
+  "21:00 → 01:30",
+  "Pause de 01:30 à 04:20",
+  "04:20 → 06:30",
 ]
-tickets_url = "https://shotgun.live/fr/events/ragnarok-festival-2026-halloween-edition"
+tickets_url = "https://shotgun.live/fr/events/ragnarok-festival-2026"
 
 [trains]
 # Prochains départs en gare, avec retards en temps réel (API publique
@@ -56,6 +59,20 @@ station_name = "Sion"
 limit = 6
 transportations = ["train"]   # ou aussi "bus" pour les cars postaux
 refresh_s = 60
+
+[route_editor]
+# Points de passage de l'aller, de la gare à l'Usine ([lat, lon]) : ceux qui
+# ont servi à générer route.geojson. Le retour reprend le même chemin à
+# l'envers. La page orga permet de les déplacer (route barrée, travaux) ; le
+# serveur recalcule alors le trajet routier avec OSRM.
+via = [
+  [46.225033, 7.359238],
+  [46.224571, 7.361794],
+  [46.226963, 7.366379],
+  [46.224831, 7.37386],
+  [46.224075, 7.373849],
+]
+osrm_url = "https://router.project-osrm.org"
 
 # Les arrêts, dans l'ordre de passage. Le tracé (route.geojson) doit passer
 # par chacun : régénérer avec tools/make-route.ps1 si on en change (la

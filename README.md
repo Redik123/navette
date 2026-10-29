@@ -9,9 +9,9 @@ dans le bus envoie sa position GPS à un petit serveur Rust, qui la diffuse
 
 ```
  Téléphone du bus ──(GPS toutes les 3-5 s, HTTPS)──▶  Serveur Rust (axum)
- Traccar Client ou /driver.html                       · accroche la position au tracé
- Chauffeur ──▶ /driver.html (à bord, message, pause) · calcule statut + ETA
- Orga ──▶ /admin.html (idem + tableau de bord)        · gère les signes sur le trajet
+ Traccar Client ou /driver                            · accroche la position au tracé
+ Chauffeur ──▶ /driver (à bord, message, pause)      · calcule statut + ETA
+ Orga ──▶ /admin (idem + tableau de bord)             · gère les signes sur le trajet
                                                       · diffuse en SSE
                                                             │
        Festivaliers ◀── page / (Leaflet, « Faire signe ») ──┘
@@ -36,6 +36,14 @@ Sur la page publique :
   qu'elle est pleine », « Départ », « En route ».
 - **« Faire signe à la navette »** pour qui est sur le trajet, loin d'un arrêt
   (voir plus bas).
+- **« Aide »** : une personne en danger près du trajet (moins de 2 km) envoie
+  sa position exacte au chauffeur et à l'orga, qui essaient de venir. Elle
+  n'est jamais diffusée au public. La fenêtre propose d'abord d'appeler le 117
+  (police) ou le 144 (ambulance) : l'équipe vient en plus, pas à la place. Sur
+  les pages chauffeur et orga, l'alerte s'affiche en rouge tout en haut et
+  sonne toutes les 6 s jusqu'à ce que quelqu'un réponde « J'y vais » ; la
+  personne voit alors que quelqu'un arrive. Alerte gardée en mémoire seulement
+  (un redémarrage l'efface) et close au bout de 2 h.
 
 **Tenue en charge** (mesurée en local) : 1000 spectateurs simultanés, 0 échec,
 ~48 Mo de RAM, 0,14 s de CPU en 15 s. Les 200 personnes prévues en
@@ -47,8 +55,20 @@ Confédération, pas par notre serveur.
 | Adresse | Pour qui |
 |---|---|
 | `/` | Le public : carte, tracé, navette en direct, places libres, temps d'attente, « Faire signe », prochains trains, « Me localiser » |
-| `/driver.html` | Le chauffeur : personnes à bord, « On part », signes sur le trajet, message aux festivaliers, auto / pause / hors service (et le GPS si Traccar Client n'est pas utilisé) |
-| `/admin.html` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés) |
+| `/driver` | Le chauffeur : petite carte (navette, signes, demandes d'aide), personnes à bord, « On part », signes sur le trajet, message aux festivaliers, auto / pause / hors service (et le GPS si Traccar Client n'est pas utilisé) |
+| `/admin` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés) et l'**éditeur de trajet** |
+
+**Route barrée ?** Dans `/admin`, section « Trajet » : les points blancs
+sont les points de passage de l'aller (le retour reprend le même chemin). On
+les glisse, on en ajoute en touchant la carte, on en retire en les touchant ;
+« Calculer » montre le nouveau trajet en jaune (calculé sur les vraies routes
+par le serveur public OSRM), « Appliquer » le publie : toutes les pages
+ouvertes se rechargent avec le nouveau tracé. Il est gardé dans
+`data/route.json` (volume `navette-data`), donc il survit aux redémarrages et
+aux mises à jour. « Trajet d'origine » revient à `route.geojson`. Garde-fous :
+chaque arrêt doit rester sur le trajet, et un trajet de plus de trois fois la
+longueur d'origine est refusé. Les signes « faire signe » en cours sont clos
+au changement de tracé.
 
 ## Pas d'horaire : comment ça marche
 
@@ -56,7 +76,7 @@ La navette a **16 places**. Elle part **dès qu'elle est pleine**, ou quand le
 chauffeur (ou l'orga) le décide.
 
 - **Personnes à bord** : boutons − / + (et « Vide » / « Plein ») sur
-  `/driver.html` ou `/admin.html`. Le compteur **repart de zéro tout seul à
+  `/driver` ou `/admin`. Le compteur **repart de zéro tout seul à
   l'arrivée à un arrêt** (tout le monde descend). Le GPS qui sautille au bord
   de l'arrêt ne le remet pas à zéro : il faut vraiment être reparti. Tant que
   personne n'a touché au compteur, la page publique n'affiche pas de places.
@@ -145,16 +165,16 @@ Réglages :
 Sur Android : désactiver l'optimisation de batterie pour Traccar Client et
 autoriser la localisation « tout le temps ».
 
-### Option B — page `/driver.html`
+### Option B — page `/driver`
 
-Ouvrir `https://navette.ragnarok-festival.ch/driver.html#t=<NAVETTE_DRIVER_TOKEN>` sur le
+Ouvrir `https://navette.ragnarok-festival.ch/driver#t=<NAVETTE_DRIVER_TOKEN>` sur le
 téléphone, puis **Démarrer**. La page garde l'écran allumé, mais doit rester
 au premier plan : si on change d'application, les envois s'arrêtent.
 
 Dans les deux cas : **téléphone branché en permanence** dans le bus, et un
 support qui laisse voir le ciel (pare-brise).
 
-Le compteur de places, « On part » et les signes sont sur `/driver.html`
+Le compteur de places, « On part » et les signes sont sur `/driver`
 **dans les deux cas** : avec Traccar Client, on ouvre simplement la page sans
 appuyer sur Démarrer (elle indique que la position arrive bien par Traccar).
 À manipuler à l'arrêt, jamais en roulant.
@@ -245,10 +265,10 @@ derrière n'importe quel proxy HTTPS.
 ## Checklist jour J
 
 - [ ] Tour d'essai complet avec le vrai téléphone, la page publique ouverte à côté
-- [ ] `/admin.html` : « Dernière position » < 10 s, batterie qui remonte
+- [ ] `/admin` : « Dernière position » < 10 s, batterie qui remonte
 - [ ] Téléphone branché, appli autorisée en arrière-plan, son coupé
 - [ ] Un téléphone de secours configuré pareil (même identifiant), éteint, dans la boîte à gants
-- [ ] `/driver.html` ouvert sur le téléphone du chauffeur : compteur à 0, un essai de « On part »
+- [ ] `/driver` ouvert sur le téléphone du chauffeur : compteur à 0, un essai de « On part »
 - [ ] Un essai de « Faire signe » sur le trajet avec un téléphone de l'orga, puis « Ignorer »
 - [ ] Mode **Auto** (page chauffeur ou admin) à l'ouverture, **Hors service** à la fermeture (efface aussi les signes en cours)
 - [ ] QR code vers la page affiché à la gare, à l'entrée, aux bars
@@ -265,6 +285,14 @@ derrière n'importe quel proxy HTTPS.
 | GET/POST | `/api/osmand` | Position au protocole OsmAnd (Traccar Client) |
 | POST | `/api/pickups` | Faire signe : `{"lat", "lon", "accuracy", "count", "dest", "device"}` → `{"id", "token", "lat", "lon"}` ou `422 {"error"}` |
 | POST | `/api/pickups/cancel` | `{"id", "token"}` |
+| POST | `/api/help` | Demande d'aide : `{"lat", "lon", "accuracy", "note", "device"}` → `{"id", "token"}` ou `422 {"error"}` |
+| POST | `/api/help/status` | `{"id", "token"}` → `{"state": "open" \| "seen" \| "closed"}` |
+| POST | `/api/help/cancel` | `{"id", "token"}` |
+| POST | `/api/crew/help` | `{"id": "...", "action": "seen" \| "closed"}` |
+| GET | `/api/admin/route` | Points de passage courants et d'origine (`Bearer <admin>`) |
+| POST | `/api/admin/route/preview` | `{"via": [[lat, lon], …]}` → `{"route", "length_m", "problem"}` (rien n'est changé) |
+| POST | `/api/admin/route` | `{"via": […]}` : recalcule et publie le trajet |
+| POST | `/api/admin/route/reset` | Revient à `route.geojson` |
 | GET | `/api/crew/state` | État + dernière position brute + signes en cours + spectateurs (`Bearer <driver>` ou `<admin>`) |
 | POST | `/api/crew/passengers` | `{"passengers": 9}` |
 | POST | `/api/crew/depart` | Annonce le départ |

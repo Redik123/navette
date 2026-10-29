@@ -281,6 +281,13 @@ impl Tracker {
         before != (self.pickups.len(), self.closed_pickups.len())
     }
 
+    /// Tracé modifié : les signes étaient placés sur l'ancien, on les clôt.
+    pub(super) fn drop_all_pickups(&mut self, now: i64) {
+        for p in std::mem::take(&mut self.pickups) {
+            self.close(p.id, Outcome::Dismissed, now);
+        }
+    }
+
     fn close(&mut self, id: String, outcome: Outcome, now: i64) {
         self.closed_pickups.push(ClosedPickup { id, outcome, ts: now });
     }
@@ -347,7 +354,7 @@ fn round10(m: f64) -> i64 {
 
 /// Identifiants imprévisibles sans dépendance : `RandomState` tire des clés
 /// aléatoires du système à chaque appel.
-fn random_hex(words: usize) -> String {
+pub(super) fn random_hex(words: usize) -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());

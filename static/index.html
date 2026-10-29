@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#0b0b0a">
   <title>Navette · Ragnarok Festival</title>
   <meta name="description" content="Où est la navette gratuite du Ragnarok Festival ? Position en direct entre la gare de Sion et l'Usine de Chandoline.">
   <meta property="og:title" content="Navette en direct · Ragnarok Festival">
@@ -11,13 +11,22 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="preload" href="/fonts/Norsebold.otf" as="font" type="font/otf" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.2.8/wdth.css">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!--
+  THESIS: la navette comme une entrée de catalogue de label : un tracé blanc qui dit où elle est, au lieu de cartes arrondies et de lueurs néon.
+  OWN-WORLD: noir mat, filets blancs, angles droits ; code couleur industriel (bleu gare, jaune Usine, rouge navette) ; Archivo étendu en capitales gravées, logo en Norse.
+  STORY: le festivalier voit l'état et le temps d'attente, repère la navette sur la ligne de son trajet, puis l'arrêt, les trains, et sait que c'est gratuit.
+  FIRST VIEWPORT: carte noire en haut ; panneau du bas : carré de code + état, gros titre fin, places en bande de 16 cases, deux lignes de trajet avec la bosse de la navette.
+  FORM: challenger « catalogue Factory / Saville » choisi par l'utilisateur à la place de la direction tirée (6), clé eb16fee5.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+  -->
   <header class="topbar">
-    <a class="brand" href="https://ragnarok-events.ch/">
+    <a class="brand" href="https://shotgun.live/fr/events/ragnarok-festival-2026" target="_blank" rel="noopener">
       <span class="wordmark">Ragnarok</span>
-      <span class="brand-sub">Navette</span>
+      <span class="brand-sub"><span class="sub-long">Navette · Halloween Édition 2026</span><span class="sub-short">Halloween 26</span></span>
     </a>
     <div class="conn" id="conn" data-state="connecting">
       <span class="conn-dot"></span><span id="conn-text">Connexion…</span>
@@ -39,6 +48,10 @@
           Trajet
         </button>
       </div>
+      <button type="button" class="help-btn" id="btn-help" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20zM12 10v5M12 18v.5"/></svg>
+        Aide
+      </button>
       <button type="button" class="locate" id="btn-locate" aria-pressed="false"
               title="Ta position reste sur ton téléphone : rien n'est envoyé.">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4.5 20.3l.7.7L12 18l6.8 3 .7-.7z"/></svg>
@@ -50,14 +63,27 @@
     <aside class="sheet" id="sheet">
       <button type="button" class="handle" id="handle" aria-label="Réduire ou agrandir le panneau" aria-expanded="true"></button>
 
+      <section class="help-card" id="help-active" role="status" hidden>
+        <strong id="help-title"></strong>
+        <p id="help-sub"></p>
+        <div class="help-actions">
+          <a class="btn danger" href="tel:117">Appeler le 117</a>
+          <button type="button" class="btn ghost" id="btn-help-cancel">Annuler l'alerte</button>
+        </div>
+      </section>
+
       <section class="status">
-        <span class="pill off" id="status-pill">Connexion</span>
-        <h1 id="status-title" aria-live="polite">Recherche de la navette…</h1>
-        <p class="status-sub" id="status-sub"></p>
+        <div class="status-head">
+          <span class="pill off" id="status-pill" aria-hidden="true"></span>
+          <h1 id="status-title" aria-live="polite">Recherche de la navette…</h1>
+          <p class="status-eta" id="status-eta" hidden></p>
+        </div>
+        <div class="trace" id="trace" role="img" aria-label="Position de la navette sur le trajet"></div>
         <div class="seats" id="seats" hidden>
           <span class="seats-text" id="seats-text"></span>
           <span class="seats-bar" id="seats-bar" aria-hidden="true"></span>
         </div>
+        <p class="status-sub" id="status-sub"></p>
         <p class="updated" id="updated"></p>
       </section>
 
@@ -67,17 +93,25 @@
       </section>
 
       <section class="block">
-        <h2>Bon à savoir</h2>
+        <h2 id="event-name">Ragnarok Festival 2026</h2>
+        <dl class="spec">
+          <div><dt>Lieu</dt><dd>Usine de Chandoline, Sion</dd></div>
+          <div><dt>Tarif</dt><dd>Gratuit</dd></div>
+          <div><dt>Chauffeur</dt><dd>Bénévole</dd></div>
+          <div><dt>Places</dt><dd id="spec-seats">16</dd></div>
+          <div><dt>Départ</dt><dd>Dès qu'elle est pleine, ou quand le chauffeur décide</dd></div>
+          <div><dt>Service</dt><dd><ul class="schedule" id="schedule"></ul></dd></div>
+        </dl>
         <div class="notice">
-          <p><strong>Gratuite.</strong> Si quelqu'un se présente comme la navette du Ragnarok et te fait payer, <strong class="scam">c'est une arnaque</strong> : ne paie pas et signale-le au festival.</p>
-          <p><strong>Conduite par un bénévole.</strong> Le chauffeur n'est pas payé et donne sa nuit pour le festival : sois sympa et suis ses consignes.</p>
+          <p>Si quelqu'un se présente comme la navette du Ragnarok et te fait payer, <strong class="scam">c'est une arnaque</strong> : ne paie pas et signale-le au festival.</p>
+          <p>Le chauffeur n'est pas payé et donne sa nuit pour le festival : sois sympa et suis ses consignes.</p>
         </div>
       </section>
 
       <section class="block" id="pickup-block" hidden>
         <h2>Sur le trajet, loin d'un arrêt ?</h2>
         <div id="pickup-idle">
-          <p class="info">Si tu ne peux vraiment pas rejoindre un arrêt, fais signe à la navette : le chauffeur verra où tu attends sur sa route.</p>
+          <p class="info">Si tu ne peux vraiment pas rejoindre un arrêt, fais signe à la navette : le chauffeur verra où tu attends sur sa route. Si elle est pleine, il ne pourra pas s'arrêter.</p>
           <button type="button" class="btn ghost" id="btn-pickup">Faire signe à la navette</button>
           <p class="info" id="pickup-unavailable"></p>
         </div>
@@ -94,15 +128,8 @@
         <p class="info" id="trains-note"></p>
       </section>
 
-      <section class="block">
-        <h2>Service</h2>
-        <ul class="schedule" id="schedule"></ul>
-        <p class="info" id="info"></p>
-      </section>
-
       <footer class="sheet-footer">
         <a id="tickets" href="#" target="_blank" rel="noopener" hidden>Billets</a>
-        <a href="https://ragnarok-events.ch/" target="_blank" rel="noopener">ragnarok-events.ch</a>
         <a href="https://www.instagram.com/ragnarok.event/" target="_blank" rel="noopener">Instagram</a>
       </footer>
     </aside>
@@ -118,9 +145,9 @@
       <fieldset>
         <legend>Combien vous êtes ?</legend>
         <div class="stepper">
-          <button type="button" id="pickup-minus" aria-label="Une personne de moins">−</button>
+          <button type="button" id="pickup-minus" aria-label="Une personne de moins"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
           <output id="pickup-count">1</output>
-          <button type="button" id="pickup-plus" aria-label="Une personne de plus">+</button>
+          <button type="button" id="pickup-plus" aria-label="Une personne de plus"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
         </div>
       </fieldset>
       <p class="dialog-note" id="pickup-seats"></p>
@@ -129,6 +156,25 @@
       <div class="dialog-actions">
         <button type="button" class="btn ghost" id="pickup-close">Annuler</button>
         <button type="submit" class="btn" id="pickup-send">Envoyer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="help-dialog" aria-labelledby="help-dialog-title">
+    <form id="help-form">
+      <h3 id="help-dialog-title">Besoin d'aide ?</h3>
+      <p class="help-lead">En danger, appelle d'abord les secours :</p>
+      <div class="help-calls">
+        <a class="call" href="tel:117"><strong>117</strong><span>Police</span></a>
+        <a class="call" href="tel:144"><strong>144</strong><span>Ambulance</span></a>
+      </div>
+      <p class="dialog-note">Tu peux aussi prévenir l'équipe de la navette, qui essaiera de venir. Ta position exacte est envoyée au chauffeur et à l'orga, jamais au public.</p>
+      <label class="field" for="help-note">Où es-tu, que se passe-t-il ? (facultatif)</label>
+      <textarea id="help-note" maxlength="200" rows="2"></textarea>
+      <p class="dialog-error" id="help-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="help-close">Annuler</button>
+        <button type="submit" class="btn danger" id="help-send">Prévenir l'équipe</button>
       </div>
     </form>
   </dialog>

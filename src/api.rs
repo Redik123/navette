@@ -9,7 +9,7 @@ use axum::body::Bytes;
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Json;
 use futures_util::StreamExt;
@@ -17,17 +17,27 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_stream::wrappers::WatchStream;
 use tower_http::compression::CompressionLayer;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{debug, warn};
 
-use crate::geo::LatLon;
+use crate::geo::{LatLon, Route};
+use crate::routing;
 use crate::state::{AppState, now_ms};
-use crate::tracker::{Fix, Ingest, Message, MessageLevel, PickupAction, PickupRequest, ServiceMode};
+use crate::tracker::{
+    AlertAction, AlertRequest, Fix, Ingest, Message, MessageLevel, PickupAction, PickupRequest, ServiceMode,
+};
 
 pub fn router(state: AppState) -> Router {
-    let static_dir = ServeDir::new(&state.cfg.server.static_dir);
+    let dir = &state.cfg.server.static_dir;
+    let static_dir = ServeDir::new(dir);
     Router::new()
+        // Adresses propres pour l'équipage ; les anciens liens en .html (dont le
+        // lien chauffeur avec son jeton après le #) y sont redirigés.
+        .route_service("/driver", ServeFile::new(dir.join("driver.html")))
+        .route_service("/admin", ServeFile::new(dir.join("admin.html")))
+        .route("/driver.html", get(|| async { Redirect::permanent("/driver") }))
+        .route("/admin.html", get(|| async { Redirect::permanent("/admin") }))
         .route("/api/config", get(get_config))
         .route("/api/state", get(get_state))
         .route("/api/stream", get(stream))
@@ -36,12 +46,19 @@ pub fn router(state: AppState) -> Router {
         .route("/api/osmand", get(osmand).post(osmand))
         .route("/api/pickups", post(pickup_request))
         .route("/api/pickups/cancel", post(pickup_cancel))
+        .route("/api/help", post(help_request))
+        .route("/api/help/status", post(help_status))
+        .route("/api/help/cancel", post(help_cancel))
         .route("/api/crew/state", get(crew_state))
         .route("/api/crew/passengers", post(crew_passengers))
         .route("/api/crew/depart", post(crew_depart))
         .route("/api/crew/pickup", post(crew_pickup))
+        .route("/api/crew/help", post(crew_help))
         .route("/api/crew/service", post(crew_service))
         .route("/api/crew/message", post(crew_message))
+        .route("/api/admin/route", get(admin_route).post(admin_route_apply))
+        .route("/api/admin/route/preview", post(admin_route_preview))
+        .route("/api/admin/route/reset", post(admin_route_reset))
         .with_state(state)
         .fallback_service(static_dir)
         // Le flux SSE est exclu d'office par le prédicat par défaut.
@@ -62,9 +79,10 @@ async fn get_config(State(st): State<AppState>) -> Response {
     (
         [
             (header::CONTENT_TYPE, "application/json"),
-            (header::CACHE_CONTROL, "public, max-age=60"),
+            // Le tracé peut changer (page orga) : jamais de copie périmée.
+            (header::CACHE_CONTROL, "no-cache"),
         ],
-        st.config_json.clone(),
+        st.config_json().to_string(),
     )
         .into_response()
 }
@@ -171,7 +189,7 @@ struct DriverFix {
     battery: Option<f64>,
 }
 
-/// Positions envoyées par la page `/driver.html` ouverte sur le téléphone du bus.
+/// Positions envoyées par la page `/driver` ouverte sur le téléphone du bus.
 async fn driver_position(
     State(st): State<AppState>,
     headers: HeaderMap,
@@ -377,6 +395,56 @@ async fn pickup_cancel(State(st): State<AppState>, Json(body): Json<CancelBody>)
     }
 }
 
+#[derive(Deserialize)]
+struct HelpBody {
+    lat: f64,
+    lon: f64,
+    accuracy: Option<f64>,
+    #[serde(default)]
+    note: String,
+    device: String,
+}
+
+/// Quelqu'un en danger près du trajet prévient l'équipage.
+async fn help_request(
+    State(st): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(body): Json<HelpBody>,
+) -> Response {
+    let device = body.device.trim();
+    if device.is_empty() || device.len() > 64 || !body.lat.is_finite() || !body.lon.is_finite() {
+        return (StatusCode::BAD_REQUEST, "demande invalide").into_response();
+    }
+    let req = AlertRequest {
+        pos: LatLon { lat: body.lat, lon: body.lon },
+        accuracy: body.accuracy,
+        note: &body.note,
+        device,
+        ip: client_ip(&headers, peer),
+    };
+    match st.request_alert(req) {
+        Ok(created) => (StatusCode::CREATED, Json(created)).into_response(),
+        Err(error) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response(),
+    }
+}
+
+/// Suivi par la personne : en POST, pour que le secret ne finisse pas dans les journaux.
+async fn help_status(State(st): State<AppState>, Json(body): Json<CancelBody>) -> Response {
+    match st.alert_state(&body.id, &body.token) {
+        Some(state) => Json(json!({ "state": state })).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn help_cancel(State(st): State<AppState>, Json(body): Json<CancelBody>) -> Response {
+    if st.cancel_alert(&body.id, &body.token) {
+        StatusCode::NO_CONTENT.into_response()
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+
 // ---------------------------------------------------------------- équipage (chauffeur ou orga)
 
 fn crew(headers: &HeaderMap, st: &AppState) -> bool {
@@ -388,16 +456,17 @@ async fn crew_state(State(st): State<AppState>, headers: HeaderMap) -> Response 
         return unauthorized();
     }
     let snapshot: Value = serde_json::from_str(&st.snapshot_json()).unwrap_or(Value::Null);
-    let (last_fix, pickups) = {
+    let (last_fix, pickups, alerts) = {
         let t = st.tracker();
-        (t.last_fix().copied(), t.crew_pickups(now_ms()))
+        (t.last_fix().copied(), t.crew_pickups(now_ms()), t.crew_alerts())
     };
     Json(json!({
         "snapshot": snapshot,
         "last_fix": last_fix,
         "pickups": pickups,
+        "alerts": alerts,
         "viewers": st.viewers.load(Ordering::Relaxed),
-        "route_length_m": st.route.length.round(),
+        "route_length_m": st.route().length.round(),
     }))
     .into_response()
 }
@@ -449,6 +518,23 @@ async fn crew_pickup(
 }
 
 #[derive(Deserialize)]
+struct CrewHelpBody {
+    id: String,
+    action: AlertAction,
+}
+
+async fn crew_help(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<CrewHelpBody>) -> Response {
+    if !crew(&headers, &st) {
+        return unauthorized();
+    }
+    if st.resolve_alert(&body.id, body.action) {
+        StatusCode::NO_CONTENT.into_response()
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+
+#[derive(Deserialize)]
 struct ServiceBody {
     mode: ServiceMode,
 }
@@ -486,6 +572,88 @@ async fn crew_message(
         level: body.level,
     }));
     StatusCode::NO_CONTENT.into_response()
+}
+
+// ---------------------------------------------------------------- orga : trajet
+
+#[derive(Deserialize)]
+struct RouteBody {
+    via: Vec<[f64; 2]>,
+}
+
+fn route_error(error: String) -> Response {
+    (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response()
+}
+
+async fn admin_route(State(st): State<AppState>, headers: HeaderMap) -> Response {
+    if !authorized(&headers, st.cfg.admin_token()) {
+        return unauthorized();
+    }
+    Json(st.route_editor_state()).into_response()
+}
+
+/// Calcule un trajet sans rien changer, pour l'aperçu dans la page orga.
+async fn admin_route_preview(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<RouteBody>) -> Response {
+    if !authorized(&headers, st.cfg.admin_token()) {
+        return unauthorized();
+    }
+    let coords = match routing::compute(&st.cfg.route_editor, &st.cfg.stops, &body.via).await {
+        Ok(c) => c,
+        Err(e) => return route_error(e),
+    };
+    let route = match routing_route(&coords) {
+        Ok(r) => r,
+        Err(e) => return route_error(e),
+    };
+    Json(json!({
+        "route": coords,
+        "length_m": route.length.round(),
+        "problem": routing::check(&route, &st.cfg.stops, st.original_route_m).err(),
+    }))
+    .into_response()
+}
+
+/// Publie le trajet : recalculé ici (on ne fait pas confiance au tracé envoyé).
+async fn admin_route_apply(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<RouteBody>) -> Response {
+    if !authorized(&headers, st.cfg.admin_token()) {
+        return unauthorized();
+    }
+    let coords = match routing::compute(&st.cfg.route_editor, &st.cfg.stops, &body.via).await {
+        Ok(c) => c,
+        Err(e) => return route_error(e),
+    };
+    let route = match routing_route(&coords) {
+        Ok(r) => r,
+        Err(e) => return route_error(e),
+    };
+    if let Err(e) = routing::check(&route, &st.cfg.stops, st.original_route_m) {
+        return route_error(e);
+    }
+    match st.set_route(route, Some(routing::CustomRoute { via: body.via, coords })) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => {
+            warn!("enregistrement du tracé impossible : {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "enregistrement impossible").into_response()
+        }
+    }
+}
+
+async fn admin_route_reset(State(st): State<AppState>, headers: HeaderMap) -> Response {
+    if !authorized(&headers, st.cfg.admin_token()) {
+        return unauthorized();
+    }
+    let result = Route::from_geojson_file(&st.cfg.server.route_file).and_then(|r| st.set_route(r, None));
+    match result {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => {
+            warn!("retour au tracé d'origine impossible : {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "tracé d'origine illisible").into_response()
+        }
+    }
+}
+
+fn routing_route(coords: &[[f64; 2]]) -> Result<Route, String> {
+    Route::new(coords.iter().map(|&[lat, lon]| LatLon { lat, lon }).collect()).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

@@ -18,6 +18,29 @@ pub struct Config {
     pub stops: Vec<StopConfig>,
     #[serde(default)]
     pub trains: TrainsConfig,
+    #[serde(default)]
+    pub route_editor: RouteEditorConfig,
+}
+
+/// Trajet modifiable depuis la page orga (route barrée, travaux…).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct RouteEditorConfig {
+    /// Points de passage de l'aller, du premier au deuxième arrêt ([lat, lon]) ;
+    /// le retour reprend le même chemin à l'envers. Ce sont ceux qui ont servi à
+    /// générer `route.geojson`.
+    pub via: Vec<[f64; 2]>,
+    /// Serveur d'itinéraires OSRM (profil voiture).
+    pub osrm_url: String,
+}
+
+impl Default for RouteEditorConfig {
+    fn default() -> Self {
+        Self {
+            via: Vec::new(),
+            osrm_url: "https://router.project-osrm.org".into(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

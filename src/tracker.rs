@@ -1,6 +1,7 @@
 //! État de la navette : réception des positions, accrochage au tracé,
 //! statut et temps d'arrivée estimés aux arrêts.
 
+mod help;
 mod pickups;
 
 use std::sync::Arc;
@@ -10,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::config::{PickupsConfig, StopConfig, TrackingConfig};
 use crate::geo::{LatLon, Projection, Route, angle_diff, haversine};
 
+pub use help::{AlertAction, AlertCreated, AlertRequest, AlertState};
+use help::{Alert, ClosedAlert};
 pub use pickups::{Created, PickupAction, PickupRequest};
 use pickups::{ClosedPickup, Pickup, PublicClosed, PublicPickup};
 
@@ -141,6 +144,7 @@ pub struct Snapshot {
     /// retrouve la sienne par son identifiant.
     pub pickups: Vec<PublicPickup>,
     pub pickups_closed: Vec<PublicClosed>,
+    pub route_version: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -181,10 +185,16 @@ pub struct Tracker {
     closed_pickups: Vec<ClosedPickup>,
     /// Créations récentes de demandes, pour limiter les abus.
     pickup_requests: Vec<(std::net::IpAddr, i64)>,
+    /// Demandes d'aide : visibles par l'équipage seulement.
+    alerts: Vec<Alert>,
+    closed_alerts: Vec<ClosedAlert>,
+    alert_requests: Vec<(std::net::IpAddr, i64)>,
     pub service: ServiceMode,
     pub message: Option<Message>,
     /// Dernier statut diffusé aux clients, pour ne republier qu'en cas de changement.
     pub published_status: Option<Status>,
+    /// Change à chaque nouveau tracé : les pages rechargent alors leur config.
+    pub route_version: i64,
 }
 
 impl Tracker {
@@ -217,10 +227,26 @@ impl Tracker {
             pickups: Vec::new(),
             closed_pickups: Vec::new(),
             pickup_requests: Vec::new(),
+            alerts: Vec::new(),
+            closed_alerts: Vec::new(),
+            alert_requests: Vec::new(),
             service: persisted.service,
             message: persisted.message,
             published_status: None,
+            route_version: 0,
         }
+    }
+
+    /// Nouveau tracé (modifié par l'orga) : on replace les arrêts, et l'accrochage
+    /// repart de zéro à la prochaine position.
+    pub fn set_route(&mut self, route: Arc<Route>, now: i64) {
+        for st in &mut self.stops {
+            st.s = route.nearest(st.pos()).s;
+        }
+        self.route = route;
+        self.snap = None;
+        self.drop_all_pickups(now);
+        self.route_version = now;
     }
 
     pub fn persisted(&self) -> Persisted {
@@ -524,6 +550,7 @@ impl Tracker {
             departure: self.departure.clone(),
             pickups: self.public_pickups(now),
             pickups_closed: self.public_closed(),
+            route_version: self.route_version,
         }
     }
 }

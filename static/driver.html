@@ -3,94 +3,62 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#0b0b0a">
   <meta name="robots" content="noindex">
   <title>Navette · Chauffeur</title>
+  <link rel="preload" href="/fonts/Norsebold.otf" as="font" type="font/otf" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.2.8/wdth.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="/crew.css">
-  <style>
-    :root {
-      --bg: #0a0a0a; --surface: #121016; --line: #2a2533; --text: #f1f5f9; --muted: #a39cb0;
-      --violet: #a78bfa; --orange: #ff7a1a; --green: #4ade80; --amber: #fbbf24; --red: #f87171;
-      color-scheme: dark;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; min-height: 100vh; padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
-      background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      display: flex; flex-direction: column; gap: 16px; max-width: 520px; margin-inline: auto;
-    }
-    h1 { margin: 0; font-size: 14px; letter-spacing: .2em; text-transform: uppercase; color: var(--violet); }
-    .state {
-      padding: 28px 20px; border-radius: 20px; background: var(--surface); border: 2px solid var(--line); text-align: center;
-    }
-    .state strong { display: block; font-size: 30px; line-height: 1.15; }
-    .state span { color: var(--muted); }
-    .state[data-s="ok"] { border-color: var(--green); } .state[data-s="ok"] strong { color: var(--green); }
-    .state[data-s="warn"] { border-color: var(--amber); } .state[data-s="warn"] strong { color: var(--amber); }
-    .state[data-s="err"] { border-color: var(--red); } .state[data-s="err"] strong { color: var(--red); }
-    dl { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
-    dl div { padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
-    dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
-    dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    button, input { font: inherit; }
-    button {
-      min-height: 60px; border: 0; border-radius: 16px; font-size: 18px; font-weight: 800; cursor: pointer;
-      background: var(--orange); color: #1b0c00;
-    }
-    button.link {
-      min-height: 44px; align-self: center; padding: 0 12px; background: none; color: var(--muted);
-      font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px;
-    }
-    dd.charging::after { content: " en charge"; color: var(--green); font-size: 13px; font-weight: 600; }
-    input { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
-    .note { color: var(--muted); font-size: 14px; margin: 0; }
-    h2 { margin: 0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
-    .state.compact { padding: 14px 16px; text-align: left; }
-    .state.compact strong { font-size: 18px; }
-    [hidden] { display: none !important; }
-  </style>
 </head>
 <body>
-  <h1>Navette · Chauffeur</h1>
+  <header class="crew-top">
+    <div class="crew-brand"><span class="wordmark">Ragnarok</span><span class="crew-role">Chauffeur</span></div>
+  </header>
 
   <form id="login" hidden>
     <p class="note">Entrer le jeton chauffeur (ou ouvrir le lien fourni par l'orga).</p>
-    <input id="token" type="password" autocomplete="off" placeholder="Jeton chauffeur" required>
-    <button type="submit" style="margin-top:10px;width:100%">Enregistrer</button>
+    <input id="token" type="password" autocomplete="off" placeholder="Jeton chauffeur" aria-label="Jeton chauffeur" required>
+    <button type="submit" class="btn">Enregistrer</button>
   </form>
 
   <main id="panel" hidden>
-    <div class="state compact" id="state" data-s="idle">
-      <strong id="state-title">Suivi arrêté</strong>
-      <span id="state-sub">Appuie sur Démarrer en bas, ou lance Traccar Client.</span>
+    <div class="state" id="state" data-s="idle">
+      <div>
+        <strong id="state-title">Suivi arrêté</strong>
+        <span id="state-sub">Appuie sur Démarrer en bas, ou lance Traccar Client.</span>
+      </div>
     </div>
 
-    <div id="crew" style="margin-top:16px"></div>
+    <div id="crew"></div>
 
-    <h2 style="margin-top:28px">Position GPS</h2>
-    <dl style="margin-top:10px">
-      <div><dt>Dernier envoi</dt><dd id="m-last">—</dd></div>
-      <div><dt>Précision GPS</dt><dd id="m-acc">—</dd></div>
-      <div><dt>Vitesse</dt><dd id="m-speed">—</dd></div>
-      <div><dt>Batterie</dt><dd id="m-batt">—</dd></div>
-      <div><dt>Positions envoyées</dt><dd id="m-count">0</dd></div>
-      <div><dt>Écran</dt><dd id="m-wake">—</dd></div>
-    </dl>
+    <section class="block">
+      <h2>Position GPS</h2>
+      <dl class="spec">
+        <div><dt>Dernier envoi</dt><dd id="m-last">—</dd></div>
+        <div><dt>Précision</dt><dd id="m-acc">—</dd></div>
+        <div><dt>Vitesse</dt><dd id="m-speed">—</dd></div>
+        <div><dt>Batterie</dt><dd id="m-batt">—</dd></div>
+        <div><dt>Envoyées</dt><dd id="m-count">0</dd></div>
+        <div><dt>Écran</dt><dd id="m-wake">—</dd></div>
+      </dl>
+      <button type="button" id="toggle" class="btn" style="margin-top:16px">Démarrer</button>
+      <p class="note">
+        Si <strong>Traccar Client</strong> envoie déjà la position (recommandé :
+        il continue écran éteint), pas besoin de Démarrer ici : le compteur, le
+        départ et les signes marchent quand même. Sinon, laisser cette page au
+        premier plan, téléphone branché.
+      </p>
+    </section>
 
-    <button type="button" id="toggle" style="width:100%;margin-top:16px">Démarrer</button>
-
-    <p class="note" style="margin-top:16px">
-      Si <strong>Traccar Client</strong> envoie déjà la position (recommandé :
-      il continue écran éteint), pas besoin de Démarrer ici : le compteur, le
-      départ et les signes marchent quand même. Sinon, laisser cette page au
-      premier plan, téléphone branché.
-    </p>
-
-    <div style="display:flex;justify-content:center;margin-top:24px">
+    <div class="center" style="margin-top:24px">
       <button type="button" class="link" id="logout">Changer de jeton</button>
     </div>
   </main>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/crew.js"></script>
   <script>
     'use strict';
@@ -99,7 +67,7 @@
     const KEY = 'navette-driver-token';
     const RUN = 'navette-driver-running';
 
-    // Le jeton peut arriver dans le lien : /driver.html#t=XXXX (le # n'est jamais envoyé au serveur).
+    // Le jeton peut arriver dans le lien : /driver#t=XXXX (le # n'est jamais envoyé au serveur).
     const fromHash = new URLSearchParams(location.hash.slice(1)).get('t');
     if (fromHash) {
       localStorage.setItem(KEY, fromHash);
@@ -240,8 +208,21 @@
     }
 
     $('toggle').addEventListener('click', () => (watchId == null ? start() : stop()));
+    // Pas de fenêtre de confirmation (bloquée par certains navigateurs) : un
+    // premier appui demande de confirmer, un second dans les 4 s déconnecte.
+    let logoutArmed = 0;
     $('logout').addEventListener('click', () => {
-      if (!confirm('Changer de jeton ? Le suivi s\'arrête et il faudra le ressaisir.')) return;
+      if (!logoutArmed) {
+        $('logout').textContent = 'Confirmer : le suivi s\'arrête';
+        logoutArmed = setTimeout(() => {
+          logoutArmed = 0;
+          $('logout').textContent = 'Changer de jeton';
+        }, 4000);
+        return;
+      }
+      clearTimeout(logoutArmed);
+      logoutArmed = 0;
+      $('logout').textContent = 'Changer de jeton';
       stop();
       localStorage.removeItem(KEY);
       token = null;
