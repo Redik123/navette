@@ -18,12 +18,62 @@ const MAX_LENGTH_RATIO: f64 = 3.0;
 /// Un arrêt plus loin que ça du tracé n'aurait plus de temps d'arrivée fiable.
 const MIN_STOP_TOLERANCE_M: f64 = 60.0;
 
+/// Au-delà, un arrêt déplacé n'est plus vraiment le même arrêt (glissé par erreur).
+const MAX_STOP_MOVE_M: f64 = 2_000.0;
+const MAX_DETAIL_CHARS: usize = 80;
+
 /// Trajet modifié, tel qu'enregistré sur disque.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomRoute {
     pub via: Vec<[f64; 2]>,
+    /// Arrêts déplacés (travaux…) ; les autres restent ceux de la config.
+    #[serde(default)]
+    pub stops: Vec<StopEdit>,
     /// [lat, lon]
     pub coords: Vec<[f64; 2]>,
+}
+
+/// Un arrêt déplacé par l'orga : nouvelle position et nouvelle précision
+/// (« Arrêt provisoire, côté nord »). Le nom et le rayon restent ceux de la config.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StopEdit {
+    pub id: String,
+    pub lat: f64,
+    pub lon: f64,
+    #[serde(default)]
+    pub detail: String,
+}
+
+/// Les arrêts de la config, avec les modifications de l'orga par-dessus.
+pub fn apply_stops(base: &[StopConfig], edits: &[StopEdit]) -> Result<Vec<StopConfig>, String> {
+    if let Some(e) = edits.iter().find(|e| !base.iter().any(|s| s.id == e.id)) {
+        return Err(format!("Arrêt inconnu : {}.", e.id));
+    }
+    base.iter()
+        .map(|stop| {
+            let Some(edit) = edits.iter().find(|e| e.id == stop.id) else {
+                return Ok(stop.clone());
+            };
+            if !edit.lat.is_finite() || !edit.lon.is_finite() {
+                return Err(format!("Position invalide pour l'arrêt {}.", stop.name));
+            }
+            let moved = LatLon { lat: edit.lat, lon: edit.lon };
+            let d = crate::geo::haversine(moved, LatLon { lat: stop.lat, lon: stop.lon });
+            if d > MAX_STOP_MOVE_M {
+                return Err(format!(
+                    "L'arrêt {} est déplacé de {:.1} km : c'est trop loin de sa place prévue.",
+                    stop.name,
+                    d / 1000.0
+                ));
+            }
+            Ok(StopConfig {
+                lat: round6(edit.lat),
+                lon: round6(edit.lon),
+                detail: edit.detail.trim().chars().take(MAX_DETAIL_CHARS).collect(),
+                ..stop.clone()
+            })
+        })
+        .collect()
 }
 
 impl CustomRoute {
@@ -50,6 +100,23 @@ struct OsrmResponse {
     message: Option<String>,
     #[serde(default)]
     routes: Vec<OsrmRoute>,
+    /// Les points demandés, recalés sur la route la plus proche.
+    #[serde(default)]
+    waypoints: Vec<OsrmWaypoint>,
+}
+
+#[derive(Deserialize)]
+struct OsrmWaypoint {
+    /// [lon, lat]
+    location: [f64; 2],
+}
+
+/// Itinéraire calculé : le tracé, et les deux arrêts recalés sur la route.
+pub struct Planned {
+    /// [lat, lon]
+    pub coords: Vec<[f64; 2]>,
+    /// [lat, lon] du premier et du deuxième arrêt, sur la route.
+    pub stops: [[f64; 2]; 2],
 }
 
 #[derive(Deserialize)]
@@ -64,8 +131,8 @@ struct OsrmGeometry {
 }
 
 /// Boucle routière : premier arrêt → points de passage → deuxième arrêt → même
-/// chemin à l'envers → premier arrêt. Renvoie les points [lat, lon].
-pub async fn compute(cfg: &RouteEditorConfig, stops: &[StopConfig], via: &[[f64; 2]]) -> Result<Vec<[f64; 2]>, String> {
+/// chemin à l'envers → premier arrêt.
+pub async fn compute(cfg: &RouteEditorConfig, stops: &[StopConfig], via: &[[f64; 2]]) -> Result<Planned, String> {
     let [a, b] = stops else {
         return Err("L'éditeur de trajet ne gère que deux arrêts.".into());
     };
@@ -114,13 +181,22 @@ pub async fn compute(cfg: &RouteEditorConfig, stops: &[StopConfig], via: &[[f64;
             res.message.unwrap_or(res.code)
         ));
     }
+    let snapped = |i: usize| {
+        res.waypoints
+            .get(i)
+            .map_or(points[i], |w| [round6(w.location[1]), round6(w.location[0])])
+    };
+    let planned_stops = [snapped(0), snapped(via.len() + 1)];
     let route = res.routes.into_iter().next().ok_or("Pas d'itinéraire trouvé.")?;
-    Ok(route
-        .geometry
-        .coordinates
-        .into_iter()
-        .map(|[lon, lat]| [round6(lat), round6(lon)])
-        .collect())
+    Ok(Planned {
+        coords: route
+            .geometry
+            .coordinates
+            .into_iter()
+            .map(|[lon, lat]| [round6(lat), round6(lon)])
+            .collect(),
+        stops: planned_stops,
+    })
 }
 
 /// Le tracé doit rester une boucle utilisable : longueur plausible par rapport
@@ -187,12 +263,32 @@ mod tests {
     }
 
     #[test]
+    fn stops_can_move_but_not_too_far() {
+        let base = [stop("gare", 46.2277, 7.3584), stop("usine", 46.2327, 7.3584)];
+        let edit = |lat: f64| StopEdit {
+            id: "gare".into(),
+            lat,
+            lon: 7.3584,
+            detail: "  Arrêt provisoire, côté nord  ".into(),
+        };
+        let moved = apply_stops(&base, &[edit(46.2287)]).unwrap();
+        assert_eq!(moved[0].lat, 46.2287);
+        assert_eq!(moved[0].detail, "Arrêt provisoire, côté nord");
+        assert_eq!(moved[0].name, "gare");
+        assert_eq!(moved[1].lat, 46.2327, "l'autre arrêt ne bouge pas");
+        assert!(apply_stops(&base, &[edit(46.26)]).unwrap_err().contains("trop loin"));
+        let unknown = StopEdit { id: "x".into(), ..edit(46.2287) };
+        assert!(apply_stops(&base, &[unknown]).is_err());
+    }
+
+    #[test]
     fn custom_route_round_trip() {
         let dir = std::env::temp_dir().join(format!("navette-route-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("route.json");
         let custom = CustomRoute {
             via: vec![[46.23, 7.36]],
+            stops: Vec::new(),
             coords: vec![[46.2277, 7.3584], [46.2327, 7.3584], [46.2277, 7.3584]],
         };
         custom.save(&path).unwrap();

@@ -58,9 +58,13 @@ Confédération, pas par notre serveur.
 | `/driver` | Le chauffeur : petite carte (navette, signes, demandes d'aide), personnes à bord, « On part », signes sur le trajet, message aux festivaliers, auto / pause / hors service (et le GPS si Traccar Client n'est pas utilisé) |
 | `/admin` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés) et l'**éditeur de trajet**. En tête, des liens vers la page publique et vers `/driver`, ouverte déjà connectée avec le jeton orga : le téléphone de l'orga peut ainsi prendre le relais pour envoyer la position GPS |
 
-**Route barrée ?** Dans `/admin`, section « Trajet » : les points blancs
-sont les points de passage de l'aller (le retour reprend le même chemin). On
-les glisse, on en ajoute en touchant la carte, on en retire en les touchant ;
+**Route barrée, arrêt impossible (travaux) ?** Dans `/admin`, section
+« Trajet » : les carrés de couleur sont les arrêts, les points blancs les
+points de passage de l'aller (le retour reprend le même chemin). On glisse un
+arrêt pour le déplacer (2 km au plus de sa place prévue ; il est recalé sur la
+rue la plus proche) et on change sa précision sous la carte (« Arrêt
+provisoire, côté nord »). On glisse les points, on en ajoute en touchant la
+carte, on en retire en les touchant ;
 « Calculer » montre le nouveau trajet en jaune (calculé sur les vraies routes
 par le serveur public OSRM), « Appliquer » le publie : toutes les pages
 ouvertes se rechargent avec le nouveau tracé. Il est gardé dans
@@ -290,8 +294,8 @@ derrière n'importe quel proxy HTTPS.
 | POST | `/api/help/cancel` | `{"id", "token"}` |
 | POST | `/api/crew/help` | `{"id": "...", "action": "seen" \| "closed"}` |
 | GET | `/api/admin/route` | Points de passage courants et d'origine (`Bearer <admin>`) |
-| POST | `/api/admin/route/preview` | `{"via": [[lat, lon], …]}` → `{"route", "length_m", "problem"}` (rien n'est changé) |
-| POST | `/api/admin/route` | `{"via": […]}` : recalcule et publie le trajet |
+| POST | `/api/admin/route/preview` | `{"via": [[lat, lon], …], "stops": [{"id", "lat", "lon", "detail"}]}` → `{"route", "length_m", "stops", "problem"}` (rien n'est changé) |
+| POST | `/api/admin/route` | Même corps : recalcule et publie le trajet et les arrêts |
 | POST | `/api/admin/route/reset` | Revient à `route.geojson` |
 | GET | `/api/crew/state` | État + dernière position brute + signes en cours + spectateurs (`Bearer <driver>` ou `<admin>`) |
 | POST | `/api/crew/passengers` | `{"passengers": 9}` |

@@ -237,12 +237,17 @@ impl Tracker {
         }
     }
 
-    /// Nouveau tracé (modifié par l'orga) : on replace les arrêts, et l'accrochage
-    /// repart de zéro à la prochaine position.
-    pub fn set_route(&mut self, route: Arc<Route>, now: i64) {
-        for st in &mut self.stops {
-            st.s = route.nearest(st.pos()).s;
-        }
+    /// Nouveau tracé et arrêts (modifiés par l'orga) : on replace les arrêts, et
+    /// l'accrochage repart de zéro à la prochaine position. Les arrêts gardent
+    /// le même ordre et les mêmes identifiants que la config.
+    pub fn set_route(&mut self, route: Arc<Route>, stops: &[StopConfig], now: i64) {
+        self.stops = stops
+            .iter()
+            .map(|c| Stop {
+                s: route.nearest(LatLon { lat: c.lat, lon: c.lon }).s,
+                cfg: c.clone(),
+            })
+            .collect();
         self.route = route;
         self.snap = None;
         self.drop_all_pickups(now);

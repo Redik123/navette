@@ -7,9 +7,9 @@ use serde_json::json;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
-use crate::config::Config;
+use crate::config::{Config, StopConfig};
 use crate::geo::Route;
-use crate::routing::CustomRoute;
+use crate::routing::{self, CustomRoute};
 use crate::tracker::{
     AlertAction, AlertCreated, AlertRequest, AlertState, Created, Fix, Ingest, Message, Persisted, PickupAction,
     PickupRequest, ServiceMode, Tracker,
@@ -24,10 +24,10 @@ fn custom_route_path(cfg: &Config) -> std::path::PathBuf {
     cfg.server.data_dir.join("route.json")
 }
 
-fn build_config_json(cfg: &Config, route: &Route, version: i64, custom: bool) -> Arc<str> {
+fn build_config_json(cfg: &Config, route: &Route, stops: &[StopConfig], version: i64, custom: bool) -> Arc<str> {
     json!({
         "event": cfg.event,
-        "stops": cfg.stops,
+        "stops": stops,
         "route": route.coords().iter().map(|c| [c.lat, c.lon]).collect::<Vec<_>>(),
         "route_length_m": route.length.round(),
         "route_version": version,
@@ -66,6 +66,8 @@ struct RouteNow {
     route: Arc<Route>,
     /// Points de passage de l'aller, et s'ils viennent de l'orga (sinon de la config).
     via: Vec<[f64; 2]>,
+    /// Arrêts en vigueur : ceux de la config, éventuellement déplacés par l'orga.
+    stops: Vec<StopConfig>,
     custom: bool,
     /// Réponse de `/api/config`, recalculée à chaque changement de tracé.
     config_json: Arc<str>,
@@ -88,22 +90,27 @@ impl AppState {
 
         // Un tracé modifié par l'orga passe avant celui de l'image.
         let original_route_m = route.length;
-        let (route, via, custom) = match CustomRoute::load(&custom_route_path(&cfg)).map(|c| (c.route(), c.via)) {
-            Some((Ok(r), via)) => {
+        let custom_route = CustomRoute::load(&custom_route_path(&cfg))
+            .map(|c| -> anyhow::Result<_> {
+                let stops = routing::apply_stops(&cfg.stops, &c.stops).map_err(anyhow::Error::msg)?;
+                Ok((c.route()?, c.via, stops))
+            });
+        let (route, via, stops, custom) = match custom_route {
+            Some(Ok((r, via, stops))) => {
                 info!("tracé modifié par l'orga : {:.0} m", r.length);
-                (Arc::new(r), via, true)
+                (Arc::new(r), via, stops, true)
             }
-            Some((Err(e), _)) => {
+            Some(Err(e)) => {
                 warn!("tracé modifié illisible, on garde l'original : {e}");
-                (route, cfg.route_editor.via.clone(), false)
+                (route, cfg.route_editor.via.clone(), cfg.stops.clone(), false)
             }
-            None => (route, cfg.route_editor.via.clone(), false),
+            None => (route, cfg.route_editor.via.clone(), cfg.stops.clone(), false),
         };
 
         let version = now_ms();
         let mut tracker = Tracker::new(
             route.clone(),
-            &cfg.stops,
+            &stops,
             cfg.tracking.clone(),
             cfg.shuttle.capacity,
             cfg.pickups.clone(),
@@ -114,7 +121,7 @@ impl AppState {
             info!("arrêt {id} à {s:.0} m du départ du tracé");
         }
 
-        let config_json = build_config_json(&cfg, &route, version, custom);
+        let config_json = build_config_json(&cfg, &route, &stops, version, custom);
         let initial = serde_json::to_string(&tracker.snapshot(now_ms()))?;
         let (tx, _) = watch::channel(Arc::from(initial));
         let trains = cfg
@@ -128,6 +135,7 @@ impl AppState {
             route: RwLock::new(RouteNow {
                 route,
                 via,
+                stops,
                 custom,
                 config_json,
             }),
@@ -151,40 +159,45 @@ impl AppState {
         self.route.read().unwrap_or_else(|e| e.into_inner()).config_json.clone()
     }
 
-    /// Points de passage courants, ceux de la config, et si le tracé a été modifié.
+    /// Points de passage et arrêts courants, ceux de la config, et si le tracé a été modifié.
     pub fn route_editor_state(&self) -> serde_json::Value {
         let now = self.route.read().unwrap_or_else(|e| e.into_inner());
         json!({
             "via": now.via,
+            "stops": now.stops,
             "default_via": self.cfg.route_editor.via,
+            "default_stops": self.cfg.stops,
             "custom": now.custom,
             "length_m": now.route.length.round(),
         })
     }
 
-    /// Remplace le tracé pour tout le monde. `custom: None` revient à l'original.
+    /// Remplace le tracé (et les arrêts) pour tout le monde. `custom: None`
+    /// revient à l'original. Les arrêts de `custom` doivent déjà être validés.
     pub fn set_route(&self, route: Route, custom: Option<CustomRoute>) -> anyhow::Result<()> {
         let path = custom_route_path(&self.cfg);
-        let via = match &custom {
+        let (via, stops) = match &custom {
             Some(c) => {
+                let stops = routing::apply_stops(&self.cfg.stops, &c.stops).map_err(anyhow::Error::msg)?;
                 c.save(&path)?;
-                c.via.clone()
+                (c.via.clone(), stops)
             }
             None => {
                 if path.exists() {
                     std::fs::remove_file(&path)?;
                 }
-                self.cfg.route_editor.via.clone()
+                (self.cfg.route_editor.via.clone(), self.cfg.stops.clone())
             }
         };
         let route = Arc::new(route);
         let version = now_ms();
         let mut t = self.tracker();
-        t.set_route(route.clone(), version);
+        t.set_route(route.clone(), &stops, version);
         *self.route.write().unwrap_or_else(|e| e.into_inner()) = RouteNow {
-            config_json: build_config_json(&self.cfg, &route, version, custom.is_some()),
+            config_json: build_config_json(&self.cfg, &route, &stops, version, custom.is_some()),
             route: route.clone(),
             via,
+            stops,
             custom: custom.is_some(),
         };
         self.publish(&mut t);

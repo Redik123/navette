@@ -427,6 +427,30 @@ input[type="password"], input[type="text"] {
 .route-status.err { color: var(--red); }
 .route-status.warn { color: var(--yellow); }
 
+/* Arrêts déplaçables : un carré de leur couleur, plus gros que les points. */
+.route-stop span {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--ink);
+  outline: 2px solid var(--paper);
+  cursor: grab;
+}
+
+/* Précision de chaque arrêt, sous la carte. */
+.route-stops { display: grid; gap: 10px; margin-top: 12px; }
+.route-stop-row { display: grid; gap: 4px; }
+
+.route-stop-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.route-stop-name::before { content: ""; width: 12px; height: 12px; background: var(--c); }
+.route-stop-row input { margin: 0; }
+
 .route-point span {
   display: grid;
   place-items: center;

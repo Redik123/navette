@@ -51,8 +51,9 @@
 
     <section class="block" id="route-editor">
       <h2>Trajet</h2>
-      <p class="note">Route bloquée ? Les points blancs sont les points de passage, numérotés dans l'ordre. Glisse un point pour le déplacer, touche la carte pour en ajouter un, touche un point pour le retirer. « Calculer » montre le nouveau trajet (en pointillé) ; « Appliquer » le publie pour tout le monde.</p>
+      <p class="note">Route bloquée, arrêt impossible (travaux) ? Les carrés de couleur sont les arrêts, les carrés blancs numérotés les points de passage de l'aller. Glisse un arrêt ou un point pour le déplacer, touche la carte pour ajouter un point, touche un point pour le retirer. « Calculer » montre le nouveau trajet (en pointillé) ; « Appliquer » le publie pour tout le monde.</p>
       <div class="route-map" id="route-map" role="region" aria-label="Éditeur du trajet"></div>
+      <div class="route-stops" id="route-stops"></div>
       <p class="route-status" id="route-status" aria-live="polite"></p>
       <div class="route-tools">
         <button type="button" class="btn ghost" id="route-preview">Calculer</button>

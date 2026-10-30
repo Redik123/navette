@@ -1,8 +1,9 @@
 'use strict';
 
-// Éditeur du trajet (page orga) : les points de passage de l'aller, que l'on
-// déplace, ajoute ou retire sur la carte. Le serveur recalcule l'itinéraire
-// routier (OSRM), avec le retour par le même chemin, et le publie à tous.
+// Éditeur du trajet (page orga) : les arrêts (carrés de couleur) et les points
+// de passage de l'aller (carrés blancs numérotés), que l'on déplace, ajoute ou
+// retire sur la carte. Le serveur recalcule l'itinéraire routier (OSRM), avec
+// le retour par le même chemin, et le publie à tous.
 
 (() => {
   const TILE_URL = 'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/3857/{z}/{x}/{y}.jpeg';
@@ -10,6 +11,7 @@
 
   const round6 = (x) => Math.round(x * 1e6) / 1e6;
   const fmtKm = (m) => `${(m / 1000).toFixed(1).replace('.', ',')} km`;
+  const copyStops = (list) => list.map((s) => ({ ...s }));
 
   /**
    * Monte l'éditeur dans #route-editor.
@@ -34,7 +36,8 @@
     // Noms des arrêts sous les points : on doit toujours pouvoir les attraper.
     map.createPane('stop-labels').style.zIndex = 590;
 
-    let stops = []; // [[lat, lon], …] dans l'ordre de la config
+    let stops = []; // arrêts en cours d'édition : { id, name, lat, lon, detail }
+    let publishedStops = [];
     let via = []; // points de passage en cours d'édition
     let published = []; // ceux du trajet publié
     let lengthNow = 0;
@@ -69,8 +72,28 @@
       $('route-status').className = `route-status ${cls}`;
     }
 
-    /** Points numérotés dans l'ordre de passage, reliés par un fil d'aller. */
+    const plan = () => ({ via, stops: stops.map(({ id, lat, lon, detail }) => ({ id, lat, lon, detail })) });
+    const pos = (s) => [s.lat, s.lon];
+
+    /** Arrêts (carrés de couleur) et points de passage (numérotés), tous déplaçables. */
     function draw() {
+      stopLayer.clearLayers();
+      stops.forEach((s, i) => {
+        const marker = L.marker(pos(s), {
+          draggable: true,
+          keyboard: false,
+          zIndexOffset: 500,
+          title: `${s.name} : glisser pour déplacer l'arrêt`,
+          icon: L.divIcon({ className: 'route-stop', html: `<span style="background:${STOP_COLORS[i % STOP_COLORS.length]}"></span>`, iconSize: [24, 24] }),
+        }).bindTooltip(s.name, { permanent: true, direction: 'auto', className: 'crew-map-label', offset: [14, 0], pane: 'stop-labels' });
+        marker.on('dragend', () => {
+          const p = marker.getLatLng();
+          Object.assign(stops[i], { lat: round6(p.lat), lon: round6(p.lng) });
+          changed(`Arrêt ${s.name} déplacé : touche « Calculer » pour voir le nouveau trajet.`);
+        });
+        stopLayer.addLayer(marker);
+      });
+
       pointLayer.clearLayers();
       via.forEach(([lat, lon], i) => {
         const marker = L.marker([lat, lon], {
@@ -90,21 +113,46 @@
         });
         pointLayer.addLayer(marker);
       });
-      if (stops.length === 2) guide.setLatLngs([stops[0], ...via, stops[1]]);
+      if (stops.length === 2) guide.setLatLngs([pos(stops[0]), ...via, pos(stops[1])]);
     }
 
-    function changed() {
+    /** Précision affichée sous le nom de chaque arrêt (« Arrêt provisoire, côté nord »). */
+    function drawStopFields() {
+      const box = $('route-stops');
+      box.replaceChildren();
+      stops.forEach((s, i) => {
+        const row = document.createElement('label');
+        row.className = 'route-stop-row';
+        const name = document.createElement('span');
+        name.className = 'route-stop-name';
+        name.style.setProperty('--c', STOP_COLORS[i % STOP_COLORS.length]);
+        name.textContent = s.name;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = 80;
+        input.value = s.detail ?? '';
+        input.placeholder = 'Précision affichée (ex. : Arrêt provisoire, côté nord)';
+        input.addEventListener('input', () => {
+          stops[i].detail = input.value;
+          changed('Précision modifiée : touche « Calculer », puis « Appliquer ».');
+        });
+        row.append(name, input);
+        box.append(row);
+      });
+    }
+
+    function changed(message = 'Modifié : touche « Calculer » pour voir le nouveau trajet.') {
       preview.setLatLngs([]);
       $('route-apply').disabled = true;
       draw();
-      status('Modifié : touche « Calculer » pour voir le nouveau trajet.', 'warn');
+      status(message, 'warn');
     }
 
     /** Un nouveau point s'insère là où il allonge le moins l'aller. */
     map.on('click', (e) => {
       if (stops.length !== 2) return;
       const p = [round6(e.latlng.lat), round6(e.latlng.lng)];
-      const seq = [stops[0], ...via, stops[1]];
+      const seq = [pos(stops[0]), ...via, pos(stops[1])];
       const d = (a, b) => L.latLng(a).distanceTo(b);
       let best = 0;
       let bestCost = Infinity;
@@ -124,24 +172,16 @@
         fetch('/api/config', { cache: 'no-store' }).then((r) => r.json()),
         api('/api/admin/route'),
       ]);
-      stops = cfg.stops.map((s) => [s.lat, s.lon]);
       current.setLatLngs(cfg.route);
-      stopLayer.clearLayers();
-      cfg.stops.forEach((s, i) => {
-        L.marker([s.lat, s.lon], {
-          keyboard: false,
-          interactive: false,
-          icon: L.divIcon({ className: 'crew-map-stop', html: `<span style="background:${STOP_COLORS[i % STOP_COLORS.length]}"></span>`, iconSize: [14, 14] }),
-        })
-          .bindTooltip(s.name, { permanent: true, direction: 'auto', className: 'crew-map-label', offset: [12, 0], pane: 'stop-labels' })
-          .addTo(stopLayer);
-      });
+      publishedStops = state.stops.map(({ id, name, lat, lon, detail }) => ({ id, name, lat, lon, detail }));
+      stops = copyStops(publishedStops);
       published = state.via.map((p) => [...p]);
       via = published.map((p) => [...p]);
       lengthNow = state.length_m;
       preview.setLatLngs([]);
       $('route-apply').disabled = true;
       draw();
+      drawStopFields();
       if (!fitted && $('route-map').clientWidth) {
         map.fitBounds(current.getBounds(), { padding: [20, 20] });
         fitted = true;
@@ -184,16 +224,21 @@
 
     $('route-preview').addEventListener('click', (e) =>
       run(e.currentTarget, 'Calcul…', async () => {
-        const res = await api('/api/admin/route/preview', { via });
+        const res = await api('/api/admin/route/preview', plan());
         preview.setLatLngs(res.route);
-        const diff = res.length_m - lengthNow;
-        const delta = Math.abs(diff) < 50 ? 'même longueur' : `${diff > 0 ? '+' : '−'}${fmtKm(Math.abs(diff))}`;
+        // Les arrêts déplacés sont recalés sur la rue : on montre où ils tombent.
+        for (const s of res.stops ?? []) {
+          const mine = stops.find((x) => x.id === s.id);
+          if (mine) Object.assign(mine, { lat: s.lat, lon: s.lon });
+        }
+        draw();
         if (res.problem) {
           status(res.problem, 'err');
-          preview.setLatLngs(res.route);
           $('route-apply').disabled = true;
           return;
         }
+        const diff = res.length_m - lengthNow;
+        const delta = Math.abs(diff) < 50 ? 'même longueur' : `${diff > 0 ? '+' : '−'}${fmtKm(Math.abs(diff))}`;
         status(`Nouveau trajet en jaune : ${fmtKm(res.length_m)} (${delta}). Vérifie-le, puis « Appliquer ».`);
         $('route-apply').disabled = false;
       }),
@@ -203,7 +248,7 @@
       const b = e.currentTarget;
       if (!armed(b, 'Confirmer : publier')) return;
       run(b, 'Publication…', async () => {
-        await api('/api/admin/route', { via });
+        await api('/api/admin/route', plan());
         preview.setLatLngs([]);
         await load();
         status('Nouveau trajet publié : les pages de tout le monde se mettent à jour.');
@@ -211,10 +256,12 @@
     });
 
     $('route-undo').addEventListener('click', () => {
+      stops = copyStops(publishedStops);
       via = published.map((p) => [...p]);
       preview.setLatLngs([]);
       $('route-apply').disabled = true;
       draw();
+      drawStopFields();
       status('Changements annulés.');
     });
 
@@ -224,7 +271,7 @@
       run(b, 'Retour…', async () => {
         await api('/api/admin/route/reset', {});
         await load();
-        status(`Trajet d'origine rétabli (${fmtKm(lengthNow)}).`);
+        status(`Trajet et arrêts d'origine rétablis (${fmtKm(lengthNow)}).`);
       });
     });
 

@@ -21,6 +21,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tracing::{debug, warn};
 
+use crate::config::StopConfig;
 use crate::geo::{LatLon, Route};
 use crate::routing;
 use crate::state::{AppState, now_ms};
@@ -580,6 +581,40 @@ async fn crew_message(
 #[derive(Deserialize)]
 struct RouteBody {
     via: Vec<[f64; 2]>,
+    /// Arrêts déplacés ; absents = ceux de la config.
+    #[serde(default)]
+    stops: Vec<routing::StopEdit>,
+}
+
+struct RoutePlan {
+    stops: Vec<StopConfig>,
+    /// Les arrêts déplacés, recalés sur la route (ce qu'on enregistre).
+    edits: Vec<routing::StopEdit>,
+    coords: Vec<[f64; 2]>,
+    route: Route,
+}
+
+/// Arrêts appliqués, trajet calculé et tracé, ou le message d'erreur à afficher.
+/// Un arrêt glissé du doigt tombe rarement pile sur la rue : on le recale sur
+/// la route trouvée par OSRM.
+async fn plan_route(st: &AppState, body: &RouteBody) -> Result<RoutePlan, String> {
+    let draft = routing::apply_stops(&st.cfg.stops, &body.stops)?;
+    let planned = routing::compute(&st.cfg.route_editor, &draft, &body.via).await?;
+    let mut edits = body.stops.clone();
+    for edit in &mut edits {
+        if let Some(&[lat, lon]) = st.cfg.stops.iter().position(|s| s.id == edit.id).and_then(|i| planned.stops.get(i)) {
+            edit.lat = lat;
+            edit.lon = lon;
+        }
+    }
+    let stops = routing::apply_stops(&st.cfg.stops, &edits)?;
+    let route = routing_route(&planned.coords)?;
+    Ok(RoutePlan {
+        stops,
+        edits,
+        coords: planned.coords,
+        route,
+    })
 }
 
 fn route_error(error: String) -> Response {
@@ -598,18 +633,15 @@ async fn admin_route_preview(State(st): State<AppState>, headers: HeaderMap, Jso
     if !authorized(&headers, st.cfg.admin_token()) {
         return unauthorized();
     }
-    let coords = match routing::compute(&st.cfg.route_editor, &st.cfg.stops, &body.via).await {
-        Ok(c) => c,
-        Err(e) => return route_error(e),
-    };
-    let route = match routing_route(&coords) {
-        Ok(r) => r,
+    let plan = match plan_route(&st, &body).await {
+        Ok(plan) => plan,
         Err(e) => return route_error(e),
     };
     Json(json!({
-        "route": coords,
-        "length_m": route.length.round(),
-        "problem": routing::check(&route, &st.cfg.stops, st.original_route_m).err(),
+        "route": plan.coords,
+        "length_m": plan.route.length.round(),
+        "stops": plan.stops,
+        "problem": routing::check(&plan.route, &plan.stops, st.original_route_m).err(),
     }))
     .into_response()
 }
@@ -619,18 +651,19 @@ async fn admin_route_apply(State(st): State<AppState>, headers: HeaderMap, Json(
     if !authorized(&headers, st.cfg.admin_token()) {
         return unauthorized();
     }
-    let coords = match routing::compute(&st.cfg.route_editor, &st.cfg.stops, &body.via).await {
-        Ok(c) => c,
+    let plan = match plan_route(&st, &body).await {
+        Ok(plan) => plan,
         Err(e) => return route_error(e),
     };
-    let route = match routing_route(&coords) {
-        Ok(r) => r,
-        Err(e) => return route_error(e),
-    };
-    if let Err(e) = routing::check(&route, &st.cfg.stops, st.original_route_m) {
+    if let Err(e) = routing::check(&plan.route, &plan.stops, st.original_route_m) {
         return route_error(e);
     }
-    match st.set_route(route, Some(routing::CustomRoute { via: body.via, coords })) {
+    let custom = routing::CustomRoute {
+        via: body.via,
+        stops: plan.edits,
+        coords: plan.coords,
+    };
+    match st.set_route(plan.route, Some(custom)) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => {
             warn!("enregistrement du tracé impossible : {e}");
