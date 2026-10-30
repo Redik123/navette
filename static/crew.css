@@ -485,6 +485,36 @@ input[type="password"], input[type="text"] {
 /* Alertes et signes : on les touche pour les voir sur la carte. */
 .crew [data-lat] { cursor: pointer; }
 
+/* ------------------------------------------------------------ statistiques (orga) */
+
+/* Lignes réglées : libellé à gauche, valeur à droite. */
+.rows { display: grid; margin: 12px 0 0; padding: 0; list-style: none; }
+
+.rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+  font-variant-numeric: tabular-nums;
+}
+
+.rows li:first-child { border-top: 0; }
+.rows li span { color: var(--muted); }
+.rows:empty { display: none; }
+
+.stats-trips { margin-top: 12px; }
+
+.stats-trips summary {
+  min-height: 44px;
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stats-trips .rows { margin-top: 0; }
+
 /* ------------------------------------------------------------ éditeur de trajet (orga) */
 
 .route-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }

@@ -63,7 +63,7 @@ Confédération, pas par notre serveur.
 |---|---|
 | `/` | Le public : carte, tracé, navette en direct, places libres, temps d'attente, « Faire signe », prochains trains, « Me localiser » |
 | `/driver` | Le chauffeur : petite carte (navette, signes, demandes d'aide), personnes à bord, « On part », prochains trains à l'arrivée en gare, signes sur le trajet, message aux festivaliers, auto / pause / hors service (et le GPS si Traccar Client n'est pas utilisé) |
-| `/admin` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés) et l'**éditeur de trajet**. En tête, des liens vers la page publique et vers `/driver`, ouverte déjà connectée avec le jeton orga : le téléphone de l'orga peut ainsi prendre le relais pour envoyer la position GPS |
+| `/admin` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés), les **personnes transportées** et l'**éditeur de trajet**. En tête, des liens vers la page publique et vers `/driver`, ouverte déjà connectée avec le jeton orga : le téléphone de l'orga peut ainsi prendre le relais pour envoyer la position GPS |
 
 **Route barrée, arrêt impossible (travaux) ?** Dans `/admin`, section
 « Trajet » : les carrés de couleur sont les arrêts, les points blancs les
@@ -80,6 +80,15 @@ aux mises à jour. « Trajet d'origine » revient à `route.geojson`. Garde-fous
 chaque arrêt doit rester sur le trajet, et un trajet de plus de trois fois la
 longueur d'origine est refusé. Les signes « faire signe » en cours sont clos
 au changement de tracé.
+
+**Personnes transportées** (statistiques, dans `/admin`) : à chaque arrivée à
+un arrêt, les personnes à bord d'après le compteur du chauffeur (signes pris
+en route compris) sont comptées comme déposées là. La page orga montre le
+total, le total par arrêt d'arrivée, par nuit (21:00 → 06:30, datée du soir)
+et chaque trajet, avec un export CSV pour un tableur. Rien n'est compté si le
+compteur n'est pas utilisé, ni quand la navette revient au même arrêt sans
+être allée à l'autre. Gardé dans `data/state.json`, donc conservé aux
+redémarrages et aux mises à jour.
 
 ## Pas d'horaire : comment ça marche
 
@@ -239,9 +248,10 @@ reconnectent seules). Pour l'installer tout de suite : *Update the stack* avec
 **Re-pull image**. Pour figer la version (par exemple pendant le festival) :
 arrêter le conteneur `watchtower` dans Portainer.
 
-Un redémarrage garde la pause et le message (volume `navette-data`), mais remet
-à zéro le compteur de passagers et efface les demandes « faire signe » en
-cours : éviter de pousser pendant le service.
+Un redémarrage garde la pause, le message, le tracé modifié et les personnes
+transportées (volume `navette-data`), mais remet à zéro le compteur de
+passagers et efface les demandes « faire signe » et d'aide en cours : éviter de
+pousser pendant le service.
 
 Si Portainer n'arrive pas à télécharger l'image, c'est que le paquet GitHub
 est privé : *github.com/Redik123?tab=packages* → **navette** → *Package
@@ -305,6 +315,7 @@ derrière n'importe quel proxy HTTPS.
 | POST | `/api/admin/route/preview` | `{"via": [[lat, lon], …], "stops": [{"id", "lat", "lon", "detail"}]}` → `{"route", "length_m", "stops", "problem"}` (rien n'est changé) |
 | POST | `/api/admin/route` | Même corps : recalcule et publie le trajet et les arrêts |
 | POST | `/api/admin/route/reset` | Revient à `route.geojson` |
+| GET | `/api/admin/trips` | Personnes transportées : `{"trips": [{"ts", "stop", "count"}], "stops": [{"id", "name"}]}` |
 | GET | `/api/crew/state` | État + dernière position brute + signes en cours + spectateurs (`Bearer <driver>` ou `<admin>`) |
 | POST | `/api/crew/passengers` | `{"passengers": 9}` |
 | POST | `/api/crew/depart` | Annonce le départ |
@@ -319,7 +330,7 @@ derrière n'importe quel proxy HTTPS.
 | `src/geo.rs` | Projection, accrochage au tracé, distances le long de la boucle |
 | `src/tracker.rs` | Filtrage des positions, choix aller/retour, statut, ETA, places, départ |
 | `src/tracker/pickups.rs` | « Faire signe » : vérifications, sens, passage, expiration, anti-abus |
-| `src/state.rs` | État partagé, diffusion, persistance (`data/state.json`) |
+| `src/state.rs` | État partagé, diffusion, persistance (`data/state.json` : service, message, personnes transportées) |
 | `src/api.rs` | Routes HTTP, formats Traccar, authentification |
 | `src/trains.rs` | Prochains départs et arrivées en gare (transport.opendata.ch), mis en cache |
 | `src/sim.rs` | Navette fictive (`--simulate`) |

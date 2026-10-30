@@ -49,6 +49,18 @@
       <div id="crew"></div>
     </section>
 
+    <section class="block" id="stats">
+      <h2>Personnes transportées</h2>
+      <dl class="spec" id="stats-spec"></dl>
+      <ol class="rows" id="stats-nights"></ol>
+      <details class="stats-trips">
+        <summary>Détail des trajets</summary>
+        <ol class="rows" id="stats-trips"></ol>
+      </details>
+      <button type="button" class="btn ghost" id="stats-csv" style="margin-top:12px">Télécharger (CSV)</button>
+      <p class="note">Compté tout seul à chaque arrivée à un arrêt, d'après le compteur « Personnes à bord » (signes pris en route compris). Rien n'est compté si le compteur n'est pas utilisé.</p>
+    </section>
+
     <section class="block" id="route-editor">
       <h2>Trajet</h2>
       <p class="note">Route bloquée, arrêt impossible (travaux) ? Les carrés de couleur sont les arrêts, les carrés blancs numérotés les points de passage de l'aller. Glisse un arrêt ou un point pour le déplacer, touche la carte pour ajouter un point, touche un point pour le retirer. « Calculer » montre le nouveau trajet (en pointillé) ; « Appliquer » le publie pour tout le monde.</p>
@@ -78,9 +90,15 @@
       moving: ['En route', 'ok'], at_stop: ['À quai, en attente', 'ok'], departing: ['Départ', 'ok'],
       stale: ['Signal perdu', 'warn'], offline: ['Hors ligne', 'err'], pause: ['Pause', 'warn'], off: ['Hors service', 'warn'],
     };
+    const STATS_MS = 30_000;
+    const TIME_FMT = new Intl.DateTimeFormat('fr-CH', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich' });
+    const DATE_FMT = new Intl.DateTimeFormat('fr-CH', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Zurich' });
+    const WEEKDAY_FMT = new Intl.DateTimeFormat('fr-CH', { weekday: 'long', timeZone: 'Europe/Zurich' });
+    const DAY_FMT = new Intl.DateTimeFormat('fr-CH', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Zurich' });
     let token = localStorage.getItem(KEY);
     let crew = null;
     let routeEditor = null;
+    let stats = null;
 
     // Les commandes de l'équipage interrogent le serveur toutes les 3 s ;
     // le reste de la page se met à jour avec le même état.
@@ -91,6 +109,7 @@
       if (token && !crew) {
         crew = mountCrew($('crew'), { getToken: () => token, onState: render, onUnauthorized: logout });
         routeEditor ??= mountRouteEditor({ getToken: () => token, onUnauthorized: logout });
+        loadStats();
       } else if (!token && crew) {
         crew.stop();
         crew = null;
@@ -134,6 +153,78 @@
         ? 'Attention : la navette est hors du tracé.'
         : next ? `Prochain arrêt : ${next.name} dans ~${Math.max(1, Math.round(next.eta_s / 60))} min.` : '';
     }
+
+    function row(left, right) {
+      const li = document.createElement('li');
+      const a = document.createElement('span');
+      const b = document.createElement('strong');
+      a.textContent = left;
+      b.textContent = right;
+      li.append(a, b);
+      return li;
+    }
+
+    const people = (n) => `${n} personne${n > 1 ? 's' : ''}`;
+    const day = (ts) => DAY_FMT.format(ts).replace(/\.$/, '');
+    // Une nuit de service va de 21:00 à 06:30 : on la date du soir où elle commence.
+    const night = (ts) => `${WEEKDAY_FMT.format(ts - 12 * 3600_000)} ${day(ts - 12 * 3600_000)}`;
+
+    /** Personnes transportées : total, par arrêt d'arrivée, par nuit, et chaque trajet. */
+    async function loadStats() {
+      if (!token) return;
+      try {
+        const res = await fetch('/api/admin/trips', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+        if (res.status === 401) return logout();
+        if (!res.ok) return;
+        stats = await res.json();
+      } catch {
+        return;
+      }
+      const { trips, stops } = stats;
+      const sum = (list) => list.reduce((n, t) => n + t.count, 0);
+
+      const spec = [['Total', sum(trips)], ['Trajets', trips.length]];
+      for (const stop of stops) spec.push([`Vers ${stop.name}`, sum(trips.filter((t) => t.stop === stop.id))]);
+      $('stats-spec').replaceChildren(...spec.map(([label, value]) => {
+        const div = document.createElement('div');
+        const dt = document.createElement('dt');
+        const dd = document.createElement('dd');
+        dt.textContent = label;
+        dd.textContent = value;
+        div.append(dt, dd);
+        return div;
+      }));
+
+      const nights = new Map();
+      for (const t of trips) {
+        const key = night(t.ts);
+        nights.set(key, [...(nights.get(key) ?? []), t]);
+      }
+      $('stats-nights').replaceChildren(...[...nights].map(([label, list]) =>
+        row(`Nuit du ${label} · ${list.length} trajet${list.length > 1 ? 's' : ''}`, people(sum(list)))));
+
+      const name = (id) => stops.find((s) => s.id === id)?.name ?? id;
+      $('stats-trips').replaceChildren(...[...trips].reverse().map((t) =>
+        row(`${day(t.ts)} ${TIME_FMT.format(t.ts)} · arrivée ${name(t.stop)}`, String(t.count))));
+      document.querySelector('.stats-trips').hidden = trips.length === 0;
+      $('stats-csv').disabled = trips.length === 0;
+    }
+
+    /** Fichier pour un tableur : point-virgule et BOM, comme l'attend Excel en Suisse. */
+    $('stats-csv').addEventListener('click', () => {
+      if (!stats) return;
+      const name = (id) => stats.stops.find((s) => s.id === id)?.name ?? id;
+      const lines = [['nuit', 'date', 'heure', 'arrivee', 'personnes']];
+      for (const t of stats.trips) lines.push([night(t.ts), DATE_FMT.format(t.ts), TIME_FMT.format(t.ts), name(t.stop), t.count]);
+      const csv = lines.map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = 'navette-personnes-transportees.csv';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    });
+
+    setInterval(() => document.hidden || loadStats(), STATS_MS);
 
     $('login').addEventListener('submit', (e) => {
       e.preventDefault();

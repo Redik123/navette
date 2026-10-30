@@ -88,6 +88,8 @@ pub struct Persisted {
     #[serde(default)]
     pub service: ServiceMode,
     pub message: Option<Message>,
+    #[serde(default)]
+    pub trips: Vec<Trip>,
 }
 
 #[derive(Debug)]
@@ -102,6 +104,17 @@ pub struct Departure {
     /// Arrêt quitté (`None` si annoncé ailleurs qu'à un arrêt).
     pub stop: Option<String>,
     pub ts: i64,
+}
+
+/// Un trajet terminé, pour les statistiques : les personnes à bord (compteur
+/// de l'équipage) déposées à un arrêt.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Trip {
+    /// Arrivée à l'arrêt (ms Unix).
+    pub ts: i64,
+    /// Arrêt d'arrivée.
+    pub stop: String,
+    pub count: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -179,7 +192,10 @@ pub struct Tracker {
     snap: Option<Snap>,
     /// Arrêt où se trouve la navette et heure (serveur) de son arrivée.
     arrival: Option<(usize, i64)>,
+    /// Dernier arrêt atteint, même après l'avoir quitté.
+    last_stop: Option<usize>,
     passengers: Option<u32>,
+    trips: Vec<Trip>,
     departure: Option<Departure>,
     pickups: Vec<Pickup>,
     closed_pickups: Vec<ClosedPickup>,
@@ -222,7 +238,9 @@ impl Tracker {
             last_fix: None,
             snap: None,
             arrival: None,
+            last_stop: None,
             passengers: None,
+            trips: persisted.trips,
             departure: None,
             pickups: Vec::new(),
             closed_pickups: Vec::new(),
@@ -258,7 +276,12 @@ impl Tracker {
         Persisted {
             service: self.service,
             message: self.message.clone(),
+            trips: self.trips.clone(),
         }
+    }
+
+    pub fn trips(&self) -> &[Trip] {
+        &self.trips
     }
 
     pub fn last_fix(&self) -> Option<&Fix> {
@@ -399,7 +422,8 @@ impl Tracker {
     }
 
     /// Repère l'arrivée à un arrêt : tout le monde descend, le compteur de
-    /// places repart de zéro (si l'équipage s'en sert).
+    /// places repart de zéro (si l'équipage s'en sert) et les personnes à bord
+    /// comptent comme transportées.
     fn update_arrival(&mut self, now: i64) {
         let Some(fix) = self.last_fix else { return };
         if let Some((i, _)) = self.arrival {
@@ -411,6 +435,17 @@ impl Tracker {
         }
         if let Some(i) = self.at_stop() {
             self.arrival = Some((i, now));
+            // De retour au même arrêt (GPS qui saute, demi-tour) : personne
+            // n'a été transporté.
+            let moved = self.last_stop != Some(i);
+            self.last_stop = Some(i);
+            if let Some(count) = self.passengers.filter(|&n| n > 0 && moved) {
+                self.trips.push(Trip {
+                    ts: now,
+                    stop: self.stops[i].cfg.id.clone(),
+                    count,
+                });
+            }
             if self.passengers.is_some() {
                 self.passengers = Some(0);
             }
@@ -695,5 +730,40 @@ mod tests {
         t.ingest(fix(0.005, 0.0, 70_000), 70_000);
         assert_eq!(t.status(70_000), Status::AtStop);
         assert_eq!(t.passengers, Some(0));
+    }
+
+    #[test]
+    fn trips_count_people_dropped_off() {
+        let mut t = shuttle();
+        // Compteur pas utilisé : rien n'est compté.
+        t.ingest(fix(0.0, 0.0, 1_000), 1_000);
+        t.ingest(fix(0.005, 0.0, 60_000), 60_000);
+        assert!(t.trips().is_empty());
+
+        // 9 personnes montent au festival, 2 signes pris en route.
+        t.set_passengers(9);
+        t.ingest(fix(0.002, 180.0, 90_000), 90_000);
+        t.set_passengers(11);
+        t.ingest(fix(0.0, 180.0, 120_000), 120_000);
+        assert_eq!(t.trips(), [Trip { ts: 120_000, stop: "gare".into(), count: 11 }]);
+
+        // Montée de 4 personnes, puis demi-tour : retour à la gare sans être
+        // allé ailleurs, ce n'est pas un trajet.
+        t.set_passengers(4);
+        t.ingest(fix(0.002, 0.0, 150_000), 150_000);
+        t.ingest(fix(0.0, 180.0, 180_000), 180_000);
+        assert_eq!(t.trips().len(), 1);
+
+        t.set_passengers(5);
+        t.ingest(fix(0.005, 0.0, 240_000), 240_000);
+        assert_eq!(t.trips().len(), 2);
+        assert_eq!(t.trips()[1], Trip { ts: 240_000, stop: "festival".into(), count: 5 });
+
+        // Les trajets survivent à un redémarrage.
+        let restored: Persisted = serde_json::from_str(&serde_json::to_string(&t.persisted()).unwrap()).unwrap();
+        assert_eq!(restored.trips, t.trips());
+        // Un ancien state.json, sans trajets, se lit toujours.
+        let old: Persisted = serde_json::from_str(r#"{"service":"auto","message":null}"#).unwrap();
+        assert!(old.trips.is_empty());
     }
 }

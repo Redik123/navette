@@ -223,9 +223,15 @@ impl AppState {
 
     pub fn ingest(&self, fix: Fix) -> Ingest {
         let mut t = self.tracker();
+        let trips = t.trips().len();
         let result = t.ingest(fix, now_ms());
         if matches!(result, Ingest::Accepted) {
             self.publish(&mut t);
+        }
+        // Arrivée à un arrêt avec du monde à bord : on garde le trajet sur disque.
+        if let Some(trip) = t.trips().get(trips) {
+            info!("trajet terminé : {} personne(s) déposée(s) à {}", trip.count, trip.stop);
+            self.persist(&t);
         }
         result
     }
@@ -309,11 +315,15 @@ impl AppState {
         done
     }
 
+    /// Écrit dans un fichier à côté puis le renomme : un arrêt brutal pendant
+    /// l'écriture ne peut pas abîmer `state.json` (et les statistiques).
     fn persist(&self, t: &Tracker) {
         let path = self.cfg.server.data_dir.join("state.json");
+        let tmp = path.with_extension("json.tmp");
         let res = serde_json::to_vec_pretty(&t.persisted())
             .map_err(std::io::Error::other)
-            .and_then(|raw| std::fs::write(&path, raw));
+            .and_then(|raw| std::fs::write(&tmp, raw))
+            .and_then(|()| std::fs::rename(&tmp, &path));
         if let Err(e) = res {
             warn!("écriture de {} impossible : {e}", path.display());
         }

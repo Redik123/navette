@@ -62,6 +62,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/admin/route", get(admin_route).post(admin_route_apply))
         .route("/api/admin/route/preview", post(admin_route_preview))
         .route("/api/admin/route/reset", post(admin_route_reset))
+        .route("/api/admin/trips", get(admin_trips))
         .with_state(state)
         .fallback_service(static_dir)
         // Le flux SSE est exclu d'office par le prédicat par défaut.
@@ -631,6 +632,16 @@ async fn plan_route(st: &AppState, body: &RouteBody) -> Result<RoutePlan, String
 
 fn route_error(error: String) -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": error }))).into_response()
+}
+
+/// Trajets terminés (personnes transportées), pour les statistiques.
+async fn admin_trips(State(st): State<AppState>, headers: HeaderMap) -> Response {
+    if !authorized(&headers, st.cfg.admin_token()) {
+        return unauthorized();
+    }
+    let trips = st.tracker().trips().to_vec();
+    let stops: Vec<Value> = st.cfg.stops.iter().map(|s| json!({ "id": s.id, "name": s.name })).collect();
+    Json(json!({ "trips": trips, "stops": stops })).into_response()
 }
 
 async fn admin_route(State(st): State<AppState>, headers: HeaderMap) -> Response {
