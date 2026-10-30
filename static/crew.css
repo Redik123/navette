@@ -260,6 +260,73 @@ input[type="password"], input[type="text"] {
 .crew .crew-note { margin: 0; color: var(--muted); font-size: 13px; }
 .crew .crew-note:empty { display: none; }
 
+/* Arrivées en gare : lignes réglées comme les trains de la page publique,
+   le temps restant en gros à droite. */
+.crew .crew-trains ol { margin: 8px 0 0; padding: 0; list-style: none; }
+
+.crew .crew-train {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.crew .crew-train:first-child { border-top: 0; }
+
+.crew .crew-train-time { flex: none; width: 54px; font-variant-numeric: tabular-nums; }
+.crew .crew-train-time strong { display: block; font-size: 17px; font-weight: 600; line-height: 1.2; }
+.crew .crew-train-time .late { color: var(--yellow); font-size: 12px; font-weight: 700; }
+
+.crew .crew-train-main { flex: 1; min-width: 0; }
+
+.crew .crew-train-to {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crew .crew-train-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.crew .crew-train-meta .changed { color: var(--yellow); font-weight: 700; }
+
+.crew .crew-train-line {
+  padding: 0 5px;
+  border: 1px solid var(--rule-strong);
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 17px;
+  white-space: nowrap;
+}
+
+/* Grandes lignes en rouge, comme sur les panneaux CFF. */
+.crew .crew-train-line:is([data-cat="IC"], [data-cat="IR"], [data-cat="EC"], [data-cat="ICE"], [data-cat="TGV"], [data-cat="RJX"]) {
+  border-color: var(--red);
+  background: var(--red);
+}
+
+.crew .crew-train-in {
+  flex: none;
+  font-size: 20px;
+  font-stretch: 112%;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Train arrivé : ses passagers sortent de la gare, en jaune comme « à quai ». */
+.crew .crew-train.arrived .crew-train-in { color: var(--yellow); }
+
 /* Signes sur le trajet : lignes réglées, losange jaune. */
 .crew .crew-pickups ol { display: grid; margin: 8px 0 0; padding: 0; list-style: none; }
 

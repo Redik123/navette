@@ -1,9 +1,10 @@
 'use strict';
 
 // Commandes de l'équipage, partagées par la page chauffeur et la page orga :
-// personnes à bord, annonce du départ, signes des gens qui attendent sur le
-// trajet, mode de service et message aux festivaliers. Toute la logique
-// (arrivée, remise à zéro, passage) est côté serveur.
+// personnes à bord, annonce du départ, prochains trains à l'arrivée en gare,
+// signes des gens qui attendent sur le trajet, mode de service et message aux
+// festivaliers. Toute la logique (arrivée, remise à zéro, passage) est côté
+// serveur.
 
 (() => {
   const POLL_MS = 3000;
@@ -25,6 +26,12 @@
 
   /** Tant qu'une demande d'aide n'a pas de réponse, l'alarme se répète. */
   const ALARM_MS = 6000;
+
+  /** Arrivées en gare : le serveur les garde en cache une minute. */
+  const TRAINS_MS = 60_000;
+  const TRAINS_SHOWN = 4;
+  /** Un train arrivé reste affiché le temps que ses passagers sortent de la gare. */
+  const ARRIVED_KEEP_MS = 3 * 60_000;
 
   // Petite carte de l'équipage : même fond swisstopo que la page publique.
   const TILE_URL = 'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/3857/{z}/{x}/{y}.jpeg';
@@ -56,6 +63,11 @@
     </section>
     <button type="button" class="crew-depart">On part</button>
     <p class="crew-note crew-depart-note"></p>
+    <section class="crew-trains" hidden>
+      <h2>Arrivées en gare</h2>
+      <ol></ol>
+      <p class="crew-note crew-trains-note"></p>
+    </section>
     <section class="crew-pickups">
       <h2>Signes sur le trajet</h2>
       <ol></ol>
@@ -106,6 +118,14 @@
   function fmtAgo(ms) {
     const m = Math.floor(Math.max(0, ms) / 60_000);
     return m < 1 ? "à l'instant" : `il y a ${m} min`;
+  }
+
+  /** Temps avant l'arrivée d'un train. */
+  function fmtIn(ms) {
+    if (ms <= 0) return 'Arrivé';
+    const m = Math.floor(ms / 60_000);
+    if (m < 1) return '< 1 min';
+    return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
   }
 
   /**
@@ -330,6 +350,10 @@
     let alarmTimer = 0;
     let firstLoad = true;
     let noteUntil = 0;
+    let trains = null; // dernier tableau des arrivées reçu
+    let trainsKey = '';
+    let trainsTimer = 0;
+    let clockOffset = 0; // heure du serveur − heure du téléphone
 
     async function api(path, body) {
       const res = await fetch(path, {
@@ -425,9 +449,78 @@
       }
     }
 
+    /**
+     * Prochains trains à l'arrivée : heure (retard compris) et temps restant,
+     * pour savoir s'il vaut la peine d'attendre le prochain avant de partir.
+     */
+    function drawTrains() {
+      if (!trains) return;
+      const now = Date.now() + clockOffset;
+      const shown = trains.arrivals
+        .map((t) => ({ ...t, expected: t.time + t.delay_min * 60_000 }))
+        .filter((t) => t.expected > now - ARRIVED_KEEP_MS)
+        .slice(0, TRAINS_SHOWN)
+        .map((t) => ({ ...t, countdown: fmtIn(t.expected - now) }));
+      const stale = trains.updated != null && now - trains.updated > 5 * 60_000;
+
+      // Redessiné à chaque état reçu : on ne touche au DOM que si l'affichage change.
+      const key = JSON.stringify([shown.map((t) => [t.time, t.delay_min, t.platform, t.countdown]), stale, trains.updated]);
+      if (key === trainsKey) return;
+      trainsKey = key;
+
+      const list = q('.crew-trains ol');
+      list.replaceChildren();
+      for (const t of shown) {
+        const li = el('li', 'crew-train');
+        li.classList.toggle('arrived', t.expected <= now);
+        const time = el('div', 'crew-train-time');
+        time.append(el('strong', null, TIME_FMT.format(t.time)));
+        if (t.delay_min > 0) time.append(el('small', 'late', `+${t.delay_min} min`));
+
+        const main = el('div', 'crew-train-main');
+        // L'API ne donne pas la provenance, seulement le terminus.
+        main.append(el('div', 'crew-train-to', t.to === trains.station ? `Terminus ${t.to}` : `Direction ${t.to}`));
+        const meta = el('div', 'crew-train-meta');
+        const line = el('span', 'crew-train-line', t.line);
+        line.dataset.cat = t.category;
+        meta.append(line);
+        if (t.platform) meta.append(el('span', t.platform_changed ? 'changed' : null, `Voie ${t.platform}`));
+        main.append(meta);
+
+        li.append(time, main, el('div', 'crew-train-in', t.countdown));
+        list.append(li);
+      }
+
+      let note = '';
+      if (trains.updated == null) note = 'Horaires CFF momentanément indisponibles.';
+      else if (stale) note = `Horaires de ${TIME_FMT.format(trains.updated)} : les retards ne sont peut-être plus à jour.`;
+      else if (!shown.length) note = 'Aucun train annoncé pour le moment.';
+      q('.crew-trains-note').textContent = note;
+    }
+
+    async function loadTrains() {
+      try {
+        const res = await fetch('/api/trains/arrivals');
+        if (res.status === 404) {
+          // Horaires désactivés dans config.toml : le bloc reste caché.
+          clearInterval(trainsTimer);
+          return;
+        }
+        if (!res.ok) throw new Error(String(res.status));
+        trains = await res.json();
+        q('.crew-trains h2').textContent = `Arrivées en gare · ${trains.station}`;
+        q('.crew-trains').hidden = false;
+        drawTrains();
+      } catch {
+        // On garde les derniers trains connus.
+      }
+    }
+
     function render(data) {
       renderAlerts(data);
       const snap = data.snapshot;
+      clockOffset = snap.server_time - Date.now();
+      drawTrains();
       capacity = snap.capacity;
       for (const e of snap.etas) names.set(e.stop, e.name);
       if (Date.now() > holdUntil) count = snap.passengers;
@@ -568,11 +661,14 @@
     });
 
     load();
+    loadTrains();
     const timer = setInterval(() => document.hidden || load(), POLL_MS);
+    trainsTimer = setInterval(() => document.hidden || loadTrains(), TRAINS_MS);
     return {
       reload: load,
       stop: () => {
         clearInterval(timer);
+        clearInterval(trainsTimer);
         clearInterval(alarmTimer);
         alarmTimer = 0;
       },

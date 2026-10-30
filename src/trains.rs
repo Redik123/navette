@@ -1,9 +1,11 @@
-//! Prochains départs de la gare, via l'API publique transport.opendata.ch
-//! (horaires CFF avec retards en temps réel, gratuite et sans clé).
+//! Prochains trains en gare, via l'API publique transport.opendata.ch
+//! (horaires CFF avec retards en temps réel, gratuite et sans clé) : les
+//! départs pour la page publique, les arrivées pour l'équipage (combien de
+//! temps attendre le prochain train à la gare).
 //!
-//! L'API demande de mettre en cache : le serveur l'interroge au plus une fois
-//! par `refresh_s`, et seulement quand quelqu'un regarde. 200 festivaliers
-//! connectés = une requête par minute.
+//! L'API demande de mettre en cache : le serveur interroge chaque tableau au
+//! plus une fois par `refresh_s`, et seulement quand quelqu'un regarde.
+//! 200 festivaliers connectés = une requête par minute.
 
 use std::time::Duration;
 
@@ -20,11 +22,12 @@ use crate::state::now_ms;
 const API_URL: &str = "https://transport.opendata.ch/v1/stationboard";
 
 /// Champs demandés : la réponse complète pèse ~40 Ko, celle-ci ~3 Ko.
-const FIELDS: [&str; 7] = [
+const FIELDS: [&str; 8] = [
     "stationboard/category",
     "stationboard/number",
     "stationboard/to",
     "stationboard/stop/departureTimestamp",
+    "stationboard/stop/arrivalTimestamp",
     "stationboard/stop/delay",
     "stationboard/stop/platform",
     "stationboard/stop/prognosis/platform",
@@ -33,15 +36,23 @@ const FIELDS: [&str; 7] = [
 /// Après un échec, on réessaie plus tôt qu'au rythme normal.
 const RETRY_AFTER: Duration = Duration::from_secs(20);
 
+/// Tableau demandé à l'API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Departures,
+    Arrivals,
+}
+
 #[derive(Debug, PartialEq, Serialize)]
-pub struct Departure {
-    /// Départ prévu à l'horaire (ms Unix).
+pub struct Train {
+    /// Départ ou arrivée prévus à l'horaire, selon le tableau (ms Unix).
     pub time: i64,
     /// Retard annoncé, en minutes.
     pub delay_min: i64,
     /// Ex. « IR 95 », « R 91 ».
     pub line: String,
     pub category: String,
+    /// Terminus du train (la gare elle-même s'il s'y arrête).
     pub to: String,
     pub platform: Option<String>,
     /// La voie n'est pas celle de l'horaire.
@@ -54,13 +65,18 @@ struct Board<'a> {
     limit: usize,
     /// Dernière réponse de l'API (ms Unix), `null` si aucune.
     updated: Option<i64>,
-    departures: &'a [Departure],
+    /// Une seule des deux listes, selon le tableau.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    departures: Option<&'a [Train]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arrivals: Option<&'a [Train]>,
 }
 
 pub struct Trains {
     cfg: TrainsConfig,
     client: reqwest::Client,
-    cache: Mutex<Cache>,
+    departures: Mutex<Cache>,
+    arrivals: Mutex<Cache>,
 }
 
 struct Cache {
@@ -74,27 +90,34 @@ impl Trains {
             .timeout(Duration::from_secs(5))
             .user_agent(concat!("navette/", env!("CARGO_PKG_VERSION"), " (Ragnarok Festival)"))
             .build()?;
-        let json = board_json(&cfg, None, &[]);
+        let empty = |kind| {
+            Mutex::new(Cache {
+                json: board_json(&cfg, kind, None, &[]),
+                next_fetch: Instant::now(),
+            })
+        };
         Ok(Self {
+            departures: empty(Kind::Departures),
+            arrivals: empty(Kind::Arrivals),
             cfg,
             client,
-            cache: Mutex::new(Cache {
-                json,
-                next_fetch: Instant::now(),
-            }),
         })
     }
 
-    /// Tableau des départs en JSON, rafraîchi si le cache a expiré.
-    /// Le verrou reste pris pendant la requête : les visiteurs qui arrivent
-    /// au même moment attendent sa réponse au lieu de relancer l'API.
-    /// En cas d'échec, on garde les derniers départs connus.
-    pub async fn board_json(&self) -> Bytes {
-        let mut cache = self.cache.lock().await;
+    /// Tableau des départs ou des arrivées en JSON, rafraîchi si le cache a
+    /// expiré. Le verrou reste pris pendant la requête : les visiteurs qui
+    /// arrivent au même moment attendent sa réponse au lieu de relancer l'API.
+    /// En cas d'échec, on garde les derniers trains connus.
+    pub async fn board_json(&self, kind: Kind) -> Bytes {
+        let cache = match kind {
+            Kind::Departures => &self.departures,
+            Kind::Arrivals => &self.arrivals,
+        };
+        let mut cache = cache.lock().await;
         if Instant::now() >= cache.next_fetch {
-            match self.fetch().await {
-                Ok(departures) => {
-                    cache.json = board_json(&self.cfg, Some(now_ms()), &departures);
+            match self.fetch(kind).await {
+                Ok(trains) => {
+                    cache.json = board_json(&self.cfg, kind, Some(now_ms()), &trains);
                     cache.next_fetch = Instant::now() + Duration::from_secs(self.cfg.refresh_s);
                 }
                 Err(e) => {
@@ -106,10 +129,13 @@ impl Trains {
         cache.json.clone()
     }
 
-    async fn fetch(&self) -> anyhow::Result<Vec<Departure>> {
-        // Quelques départs de plus : la page masque ceux qui sont déjà partis.
+    async fn fetch(&self, kind: Kind) -> anyhow::Result<Vec<Train>> {
+        // Quelques trains de plus : la page masque ceux qui sont déjà passés.
         let limit = (self.cfg.limit + 4).to_string();
         let mut query = vec![("id", self.cfg.station_id.as_str()), ("limit", &limit)];
+        if kind == Kind::Arrivals {
+            query.push(("type", "arrival"));
+        }
         query.extend(self.cfg.transportations.iter().map(|t| ("transportations[]", t.as_str())));
         query.extend(FIELDS.map(|f| ("fields[]", f)));
 
@@ -122,16 +148,17 @@ impl Trains {
             .error_for_status()?
             .bytes()
             .await?;
-        parse(&body)
+        parse(&body, kind)
     }
 }
 
-fn board_json(cfg: &TrainsConfig, updated: Option<i64>, departures: &[Departure]) -> Bytes {
+fn board_json(cfg: &TrainsConfig, kind: Kind, updated: Option<i64>, trains: &[Train]) -> Bytes {
     let board = Board {
         station: &cfg.station_name,
         limit: cfg.limit,
         updated,
-        departures,
+        departures: (kind == Kind::Departures).then_some(trains),
+        arrivals: (kind == Kind::Arrivals).then_some(trains),
     };
     serde_json::to_vec(&board).unwrap_or_default().into()
 }
@@ -153,6 +180,7 @@ struct ApiEntry {
 #[serde(rename_all = "camelCase")]
 struct ApiStop {
     departure_timestamp: Option<i64>,
+    arrival_timestamp: Option<i64>,
     delay: Option<i64>,
     platform: Option<String>,
     prognosis: Option<ApiPrognosis>,
@@ -163,19 +191,24 @@ struct ApiPrognosis {
     platform: Option<String>,
 }
 
-fn parse(body: &[u8]) -> anyhow::Result<Vec<Departure>> {
+fn parse(body: &[u8], kind: Kind) -> anyhow::Result<Vec<Train>> {
     let board: ApiBoard = serde_json::from_slice(body).context("réponse illisible")?;
     Ok(board
         .stationboard
         .into_iter()
-        .filter_map(ApiEntry::into_departure)
+        .filter_map(|e| e.into_train(kind))
         .collect())
 }
 
 impl ApiEntry {
-    fn into_departure(self) -> Option<Departure> {
+    fn into_train(self, kind: Kind) -> Option<Train> {
         let non_empty = |s: Option<String>| s.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
-        let time = self.stop.departure_timestamp? * 1000;
+        // Sur le tableau des arrivées, l'API range l'heure d'arrivée dans
+        // `departureTimestamp` et laisse `arrivalTimestamp` vide.
+        let time = match kind {
+            Kind::Departures => self.stop.departure_timestamp,
+            Kind::Arrivals => self.stop.arrival_timestamp.or(self.stop.departure_timestamp),
+        }? * 1000;
         let to = non_empty(self.to)?;
         let category = non_empty(self.category).unwrap_or_default();
         let mut number = non_empty(self.number).unwrap_or_default();
@@ -195,7 +228,7 @@ impl ApiEntry {
         let planned = non_empty(self.stop.platform);
         let actual = non_empty(self.stop.prognosis.and_then(|p| p.platform));
         let platform_changed = actual.is_some() && actual != planned;
-        Some(Departure {
+        Some(Train {
             time,
             delay_min: self.stop.delay.unwrap_or(0).max(0),
             line,
@@ -225,12 +258,12 @@ mod tests {
             {"stop":{"departureTimestamp":1793102700,"delay":0,"platform":"3","prognosis":null},
              "category":"EC","number":"000044","to":"Genève"}
         ]}"#;
-        let deps = parse(body.as_bytes()).unwrap();
+        let deps = parse(body.as_bytes(), Kind::Departures).unwrap();
         assert_eq!(deps.len(), 4);
         assert_eq!(deps[3].line, "EC 44");
         assert_eq!(
             deps[0],
-            Departure {
+            Train {
                 time: 1_793_101_140_000,
                 delay_min: 1,
                 line: "IR 95".into(),
@@ -248,7 +281,40 @@ mod tests {
     }
 
     #[test]
+    fn parses_arrivals() {
+        // Réponse réelle de l'API (type=arrival) : l'heure d'arrivée est dans
+        // `departureTimestamp`, un train qui s'arrête à Sion va « à Sion ».
+        let body = r#"{"stationboard":[
+            {"stop":{"arrivalTimestamp":null,"departureTimestamp":1793395080,"delay":2,"platform":"2","prognosis":{"platform":null}},
+             "category":"IR","number":"95","to":"Sion"},
+            {"stop":{"arrivalTimestamp":1793396100,"departureTimestamp":1793396160,"delay":null,"platform":"3","prognosis":null},
+             "category":"R","number":"91","to":"St-Maurice"}
+        ]}"#;
+        let arrs = parse(body.as_bytes(), Kind::Arrivals).unwrap();
+        assert_eq!(arrs.len(), 2);
+        assert_eq!(arrs[0].time, 1_793_395_080_000);
+        assert_eq!(arrs[0].delay_min, 2);
+        assert_eq!(arrs[0].to, "Sion");
+        // Si l'API remplit un jour l'heure d'arrivée, c'est elle qui compte.
+        assert_eq!(arrs[1].time, 1_793_396_100_000);
+    }
+
+    #[test]
+    fn board_keeps_departures_key() {
+        // La page publique lit `departures` : la clé ne doit pas changer.
+        let cfg = TrainsConfig::default();
+        let json = |kind| serde_json::from_slice::<serde_json::Value>(&board_json(&cfg, kind, None, &[])).unwrap();
+        let deps = json(Kind::Departures);
+        assert!(deps["departures"].is_array());
+        assert!(deps.get("arrivals").is_none());
+        let arrs = json(Kind::Arrivals);
+        assert!(arrs["arrivals"].is_array());
+        assert!(arrs.get("departures").is_none());
+        assert_eq!(arrs["station"], "Sion");
+    }
+
+    #[test]
     fn rejects_garbage() {
-        assert!(parse(b"<html>maintenance</html>").is_err());
+        assert!(parse(b"<html>maintenance</html>", Kind::Departures).is_err());
     }
 }

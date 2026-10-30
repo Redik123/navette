@@ -45,6 +45,13 @@ Sur la page publique :
   personne voit alors que quelqu'un arrive. Alerte gardée en mémoire seulement
   (un redémarrage l'efface) et close au bout de 2 h.
 
+Sur les pages chauffeur et orga, **les prochains trains à l'arrivée en gare de
+Sion** (heure, retard, voie, temps restant), juste sous « On part » : de quoi
+décider d'attendre le prochain train ou de partir. Un train arrivé reste
+affiché 3 min, le temps que ses passagers sortent de la gare. Même API et même
+cache que les départs (une requête par minute au plus, seulement quand une page
+de l'équipage est ouverte).
+
 **Tenue en charge** (mesurée en local) : 1000 spectateurs simultanés, 0 échec,
 ~48 Mo de RAM, 0,14 s de CPU en 15 s. Les 200 personnes prévues en
 permanence ne pèsent rien. Le fond de carte (swisstopo) est servi par la
@@ -55,7 +62,7 @@ Confédération, pas par notre serveur.
 | Adresse | Pour qui |
 |---|---|
 | `/` | Le public : carte, tracé, navette en direct, places libres, temps d'attente, « Faire signe », prochains trains, « Me localiser » |
-| `/driver` | Le chauffeur : petite carte (navette, signes, demandes d'aide), personnes à bord, « On part », signes sur le trajet, message aux festivaliers, auto / pause / hors service (et le GPS si Traccar Client n'est pas utilisé) |
+| `/driver` | Le chauffeur : petite carte (navette, signes, demandes d'aide), personnes à bord, « On part », prochains trains à l'arrivée en gare, signes sur le trajet, message aux festivaliers, auto / pause / hors service (et le GPS si Traccar Client n'est pas utilisé) |
 | `/admin` | L'orga : les mêmes commandes, plus un tableau de bord (statut public, âge de la dernière position, batterie du téléphone, spectateurs connectés) et l'**éditeur de trajet**. En tête, des liens vers la page publique et vers `/driver`, ouverte déjà connectée avec le jeton orga : le téléphone de l'orga peut ainsi prendre le relais pour envoyer la position GPS |
 
 **Route barrée, arrêt impossible (travaux) ?** Dans `/admin`, section
@@ -285,6 +292,7 @@ derrière n'importe quel proxy HTTPS.
 | GET | `/api/state` | État courant (JSON) |
 | GET | `/api/stream` | Flux temps réel (Server-Sent Events) |
 | GET | `/api/trains` | Prochains départs en gare (cache serveur, `[trains]` dans `config.toml`) |
+| GET | `/api/trains/arrivals` | Prochaines arrivées en gare (même cache, clé `arrivals`), pour l'équipage |
 | POST | `/api/driver/position` | Position (JSON, `Authorization: Bearer <driver>`) |
 | GET/POST | `/api/osmand` | Position au protocole OsmAnd (Traccar Client) |
 | POST | `/api/pickups` | Faire signe : `{"lat", "lon", "accuracy", "count", "dest", "device"}` → `{"id", "token", "lat", "lon"}` ou `422 {"error"}` |
@@ -313,7 +321,7 @@ derrière n'importe quel proxy HTTPS.
 | `src/tracker/pickups.rs` | « Faire signe » : vérifications, sens, passage, expiration, anti-abus |
 | `src/state.rs` | État partagé, diffusion, persistance (`data/state.json`) |
 | `src/api.rs` | Routes HTTP, formats Traccar, authentification |
-| `src/trains.rs` | Prochains trains (transport.opendata.ch), mis en cache |
+| `src/trains.rs` | Prochains départs et arrivées en gare (transport.opendata.ch), mis en cache |
 | `src/sim.rs` | Navette fictive (`--simulate`) |
 | `static/` | Pages web (Leaflet) ; `crew.js` : commandes communes chauffeur / orga |
 | `Dockerfile`, `docker-compose*.yml` | Image et stacks Docker / Portainer |

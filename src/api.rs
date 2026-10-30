@@ -28,6 +28,7 @@ use crate::state::{AppState, now_ms};
 use crate::tracker::{
     AlertAction, AlertRequest, Fix, Ingest, Message, MessageLevel, PickupAction, PickupRequest, ServiceMode,
 };
+use crate::trains::Kind;
 
 pub fn router(state: AppState) -> Router {
     let dir = &state.cfg.server.static_dir;
@@ -43,6 +44,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/state", get(get_state))
         .route("/api/stream", get(stream))
         .route("/api/trains", get(get_trains))
+        .route("/api/trains/arrivals", get(get_arrivals))
         .route("/api/driver/position", post(driver_position))
         .route("/api/osmand", get(osmand).post(osmand))
         .route("/api/pickups", post(pickup_request))
@@ -101,6 +103,16 @@ async fn get_state(State(st): State<AppState>) -> Response {
 
 /// Prochains trains au départ de la gare (mis en cache par le serveur).
 async fn get_trains(State(st): State<AppState>) -> Response {
+    trains_board(&st, Kind::Departures).await
+}
+
+/// Prochains trains à l'arrivée en gare, pour l'équipage : combien de temps
+/// attendre les festivaliers du prochain train.
+async fn get_arrivals(State(st): State<AppState>) -> Response {
+    trains_board(&st, Kind::Arrivals).await
+}
+
+async fn trains_board(st: &AppState, kind: Kind) -> Response {
     let Some(trains) = &st.trains else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -109,7 +121,7 @@ async fn get_trains(State(st): State<AppState>) -> Response {
             (header::CONTENT_TYPE, "application/json"),
             (header::CACHE_CONTROL, "public, max-age=30"),
         ],
-        trains.board_json().await,
+        trains.board_json(kind).await,
     )
         .into_response()
 }
